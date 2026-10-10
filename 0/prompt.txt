@@ -1,0 +1,45 @@
+alright now with the code we have, can you update and merge and also
+
+check in this there are some checks got broken. can you fix them?
+
+---
+
+update our local repo pull the files
+
+---
+
+did you pulled what maria has done
+
+---
+
+# Files pasted by the user:
+
+## "The winning approach is **not to overfit to the public portal**. Build a resili…": C:\Users\vamsh\.codex/attachments/e775977a-cfa5-4294-9bf0-84c7d796103e/Pasted text.txt
+
+## My request:
+alright now 
+
+Tell me what are your thoughts on this `?
+
+---
+
+Add a live-form pre-submit checklist/report.
+
+you mean submit to direct on to the porta without test?
+
+---
+
+My priority order would be:
+
+1. Add a live-form pre-submit checklist/report.
+2. Test recovery on synthetic portal variants: renamed fields, reordered steps, validation errors, delayed TAN, interrupted session.
+3. Preserve source/provenance alongside extracted facts, so the agent can resolve contradictions defensibly.
+4. Add OCR only if observed inputs require it.
+
+So: excellent strategic memo; it validates the architecture we chose, but it also points directly to the highest-value next improvement—submission eligibility validation.
+
+
+
+
+
+go ahead

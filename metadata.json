@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4K6F6R95NQ4VR36EDGPDEHV",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "starter-kit/README.md",
+    "starter-kit/casefile.py",
+    "starter-kit/preflight.py",
+    "starter-kit/submit.py",
+    "starter-kit/tests/test_casefile.py",
+    "starter-kit/tests/test_preflight.py",
+    "starter-kit/tests/test_submit.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 282021,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10784256,
+    "output_tokens": 43170,
+    "api_call_count": 107
+  }
+}
