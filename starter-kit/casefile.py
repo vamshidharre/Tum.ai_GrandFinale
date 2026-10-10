@@ -587,9 +587,11 @@ class CaseFile:
         """The open questions, derived from the brief's rules and the facts on file: id and what to find."""
         facts = self.inputs()
         found: list[tuple[str, str]] = []
+        found_ids: set[str] = set()
 
         def ask(qid: str, text: str) -> None:
-            if qid not in self.answers:
+            if qid not in self.answers and qid not in found_ids:
+                found_ids.add(qid)
                 found.append((qid, text))
 
         if not facts.positions:
