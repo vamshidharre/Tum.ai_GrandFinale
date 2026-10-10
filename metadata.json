@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4KD0J556EDJB4E23EBFQ671",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 10,
+  "checkpoints_count": 13,
   "files_touched": [
     "TEAM.md",
     "starter-kit/submit.py",
@@ -28,6 +28,12 @@
       "transcript": "/2/full.jsonl",
       "compact_transcript": "/2/transcript.jsonl",
       "content_hash": "/2/content_hash.txt",
+      "prompt": ""
+    },
+    {
+      "metadata": "/3/metadata.json",
+      "transcript": "/3/full.jsonl",
+      "content_hash": "/3/content_hash.txt",
       "prompt": ""
     }
   ],
