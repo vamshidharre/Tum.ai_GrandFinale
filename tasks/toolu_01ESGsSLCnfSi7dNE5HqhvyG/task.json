@@ -1,0 +1,18 @@
+{
+  "tool_use_id": "toolu_01ESGsSLCnfSi7dNE5HqhvyG",
+  "agent_id": "a2180459a04c09b4f",
+  "subagent_type": "general-purpose",
+  "task_description": "Local run harness script",
+  "files": [
+    "tools/local_run.py"
+  ],
+  "token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 144996,
+    "cache_read_tokens": 4847378,
+    "output_tokens": 44490,
+    "api_call_count": 35
+  },
+  "started_at": "2026-10-10T14:53:01.0279203+02:00",
+  "completed_at": "2026-10-10T15:11:51.8397726+02:00"
+}
