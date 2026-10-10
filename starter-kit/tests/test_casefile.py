@@ -12,6 +12,29 @@ import llm  # noqa: E402
 
 
 class EvidenceProvenance(unittest.IsolatedAsyncioTestCase):
+    def test_future_index_window_does_not_erase_rate_valid_on_scenario_date(self):
+        facts = casefile.CaseFile("brief", {
+            "tender_reference": "TEST-0003", "scenario_date": "2030-06-15",
+            "authorized_senders": {"price_indices": "pricing@example.test"},
+        })
+        facts.messages[("pricing@example.test", "2030-06-01", "earlier rate")] = {
+            "sender": "pricing@example.test", "timestamp": "2030-06-01",
+            "tender_reference": "TEST-0003", "number_format": "en-US",
+            "price_indices": [{"code": "IDX-TEST", "rate": "2.5", "unit": "EUR/kg",
+                               "valid_from": "2030-01-01", "valid_to": "2030-12-31"}],
+        }
+        facts.messages[("pricing@example.test", "2030-06-10", "later rate")] = {
+            "sender": "pricing@example.test", "timestamp": "2030-06-10",
+            "tender_reference": "TEST-0003", "number_format": "en-US",
+            "price_indices": [{"code": "IDX-TEST", "rate": "3.0", "unit": "EUR/kg",
+                               "valid_from": "2031-01-01", "valid_to": "2031-12-31"}],
+        }
+
+        rates = facts.authorities().index_rates
+
+        self.assertIn("IDX-TEST", rates)
+        self.assertEqual(str(rates["IDX-TEST"]), "0.0025")
+
     async def test_successful_extraction_records_its_source_and_typed_result(self):
         facts = casefile.CaseFile("brief", {"tender_reference": "TEST-0001", "scenario_date": "2030-01-01"})
 

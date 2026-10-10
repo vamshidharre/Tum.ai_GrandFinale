@@ -394,7 +394,6 @@ class CaseFile:
                     if _text(entry.get("code")):
                         by_code.setdefault(entry["code"].strip(), []).append(entry)
                 for code, entries in by_code.items():
-                    result.index_rates.pop(code, None)  # the latest message decides this code alone
                     for entry in entries:
                         start, end = parse_when(entry.get("valid_from")), parse_when(entry.get("valid_to"), end_of_day=True)
                         if (start and start.date() > day) or (end and end.date() < day):
