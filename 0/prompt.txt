@@ -290,3 +290,14 @@ I hit my usage limit while you were working, but it has reset now. Please contin
 ---
 
 continue
+
+---
+
+before commiting can you test? 
+
+<pasted_content id="6deb">
+Test run
+Runs your agent system in the sandbox on the public scenario, exactly as a scored run would, but never ranked. Easiest from your terminal, in your agent folder: atira test-run . uploads it, starts the run and opens it live.
+
+atira test-run .
+</pasted_content id="6deb">
