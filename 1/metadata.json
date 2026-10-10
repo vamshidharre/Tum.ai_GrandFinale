@@ -1,0 +1,93 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4K0C5EV1E9QG6PZZF53HGP7",
+  "session_id": "393cd171-e87b-4789-b576-6d892697c2a0",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T13:35:14.7534198Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "save_step_count": 3,
+  "files_touched": [
+    "starter-kit/tests/fixtures/account.html",
+    "starter-kit/tests/fixtures/confirm_submit.html",
+    "starter-kit/tests/fixtures/decoy_triplet.html",
+    "starter-kit/tests/fixtures/details.html",
+    "starter-kit/tests/fixtures/downloads.html",
+    "starter-kit/tests/fixtures/form.html",
+    "starter-kit/tests/fixtures/frames_inner.html",
+    "starter-kit/tests/fixtures/frames_middle.html",
+    "starter-kit/tests/fixtures/frames_outer.html",
+    "starter-kit/tests/fixtures/gate.html",
+    "starter-kit/tests/fixtures/hover_menu.html",
+    "starter-kit/tests/fixtures/icon_buttons.html",
+    "starter-kit/tests/fixtures/load_more.html",
+    "starter-kit/tests/fixtures/load_more_remote.html",
+    "starter-kit/tests/fixtures/login.html",
+    "starter-kit/tests/fixtures/notes.txt",
+    "starter-kit/tests/fixtures/obfuscated_text.html",
+    "starter-kit/tests/fixtures/paged_list.html",
+    "starter-kit/tests/fixtures/price_list.csv",
+    "starter-kit/tests/fixtures/printable.html",
+    "starter-kit/tests/fixtures/pseudo_labels.html",
+    "starter-kit/tests/fixtures/time_pre.html",
+    "starter-kit/tests/fixtures/timed_dialog.html",
+    "starter-kit/tests/fixtures/timed_dialog_question.html",
+    "starter-kit/tests/fixtures/tooltip_canvas.html",
+    "starter-kit/tests/test_browser_env.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "225d8f282d9c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 130,
+    "cache_creation_tokens": 307542,
+    "cache_read_tokens": 13434782,
+    "output_tokens": 131015,
+    "api_call_count": 60,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T13:35:14.589459Z",
+    "agent_lines": 1167,
+    "agent_removed": 0,
+    "human_added": 344,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1511,
+    "total_lines_changed": 1511,
+    "agent_percentage": 77.23362011912641,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 172,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1167,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "tools/submit-batch-action.patch": 172
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 172,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1167,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "tools/submit-batch-action.patch": 172
+      }
+    }
+  ]
+}
