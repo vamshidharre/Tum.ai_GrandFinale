@@ -3,6 +3,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -12,6 +13,32 @@ import llm  # noqa: E402
 
 
 class EvidenceProvenance(unittest.IsolatedAsyncioTestCase):
+    def test_questions_deduplicates_shared_index_ids(self):
+        facts = casefile.CaseFile("brief", {"tender_reference": "TEST-0006", "scenario_date": "2030-01-01"})
+        requirement = SimpleNamespace(missing=lambda: [], catalogue_group="test group")
+        condition = SimpleNamespace(scales=[(1, 1)], currency="EUR", fx_key=None,
+                                   valid_on=lambda scenario: True)
+        material = SimpleNamespace(number="MAT-TEST", stock=1, stock_lead_weeks=1,
+                                   production_lead_weeks=1, carton_size=1, allocation_mass_g=1,
+                                   surcharge_mass_g=1, conditions=[condition], index_code="IDX-TEST")
+        authorities = SimpleNamespace(discount_percent=0, index_rates={}, fx={}, clauses={}, tariffs={},
+                                      commitments={}, pools={}, bonus={})
+        inputs = SimpleNamespace(
+            positions=[SimpleNamespace(position="P-1", requirement_ref="REQ-1", is_set=False),
+                       SimpleNamespace(position="P-2", requirement_ref="REQ-2", is_set=False)],
+            clarifications=[], governing="REV-TEST", requirements={}, materials=[], authorities=authorities,
+        )
+        needs = {"REQ-1": requirement, "REQ-2": requirement}
+        with (patch.object(facts, "inputs", return_value=inputs),
+              patch.object(casefile, "active_clarifications", return_value=[]),
+              patch.object(casefile, "resolve_requirements", return_value=(needs, {})),
+              patch.object(casefile, "merged_assignments", return_value=({}, [])),
+              patch.object(casefile, "final_quantities", return_value=({}, [])),
+              patch.object(casefile, "match_material", return_value=material)):
+            question_ids = [qid for qid, _ in facts.questions()]
+
+        self.assertEqual(question_ids.count("index:IDX-TEST"), 1)
+
     def test_evidence_based_mail_questions_cannot_be_completed_without_facts(self):
         for question in ("mailbox", "discount", "index:IDX-TEST", "fx:FX-TEST", "condition_group:GROUP-TEST"):
             facts = casefile.CaseFile("brief", {"tender_reference": "TEST-0005", "scenario_date": "2030-01-01"})
