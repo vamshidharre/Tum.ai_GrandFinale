@@ -1,0 +1,84 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4K4T0CB56BPV9YSN4AW08QW",
+  "session_id": "01a1263e-cb5a-74f3-9b50-21398b00544c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T14:52:29.1249599Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    "starter-kit/agent.py",
+    "starter-kit/browser_env.py",
+    "starter-kit/casefile.py",
+    "starter-kit/llm.py",
+    "starter-kit/worker.py",
+    "tuning/replay_extraction.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "eadc43e304ee",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 61166,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 341760,
+    "output_tokens": 3225,
+    "api_call_count": 10,
+    "subagent_tokens_complete": true
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T14:52:29.0143077Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 2010,
+    "human_removed": 1773,
+    "total_committed": 0,
+    "total_lines_changed": 3783,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 2243,
+      "user_lines_removed": 2001,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "starter-kit/agent.py": 234,
+        "starter-kit/browser_env.py": 638,
+        "starter-kit/casefile.py": 615,
+        "starter-kit/llm.py": 192,
+        "starter-kit/submit.py": 292,
+        "starter-kit/worker.py": 212,
+        "tuning/replay_extraction.py": 60
+      },
+      "user_removed_per_file": {
+        "starter-kit/agent.py": 231,
+        "starter-kit/browser_env.py": 638,
+        "starter-kit/casefile.py": 598,
+        "starter-kit/llm.py": 144,
+        "starter-kit/submit.py": 183,
+        "starter-kit/worker.py": 207
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 18,
+      "user_lines_removed": 4,
+      "agent_lines_added": 1947,
+      "agent_lines_removed": 1818,
+      "user_added_per_file": {
+        "starter-kit/browser_env.py": 18
+      },
+      "user_removed_per_file": {
+        "starter-kit/browser_env.py": 4
+      }
+    }
+  ]
+}
