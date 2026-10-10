@@ -61,6 +61,37 @@ class EvidenceProvenance(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(facts.evidence, [])
         self.assertIn("no usable records", facts.take_news("tender")[0])
 
+    async def test_stock_evidence_updates_material_and_closes_its_data_question(self):
+        facts = casefile.CaseFile("brief", {"tender_reference": "TEST-0002", "scenario_date": "2030-01-01"})
+        facts.positions["P-TEST"] = {"position": "P-TEST", "quantity": 2, "requirement_ref": "REQ-TEST"}
+        facts.revisions["REV-TEST"] = {"revision": "REV-TEST", "status": "current", "date": "2029-01-01"}
+        facts.requirements[("REV-TEST", "REQ-TEST")] = {
+            "requirement_ref": "REQ-TEST", "bore_mm": 10, "stroke_mm": 20, "pressure_bar": 30,
+            "mounting": "test mount", "certification": "test spec", "catalogue_group": "test group",
+        }
+        facts.materials["MAT-TEST"] = {
+            "material_number": "MAT-TEST", "is_active": True, "catalogue_group": "test group",
+            "bore_mm": 10, "stroke_mm": 20, "pressure_bar": 30, "mounting": "test mount",
+            "certification": "test spec", "carton_size": 1, "allocation_mass": "1",
+            "surcharge_mass": "1", "free_stock": None, "stock_lead_weeks": None,
+            "production_lead_weeks": 5,
+        }
+        facts.conditions["MAT-TEST"] = {("2029-01-01", "2031-01-01"): {
+            "valid_from": "2029-01-01", "valid_to": "2031-01-01", "currency": "EUR",
+            "price_unit_pieces": 1, "scales": [{"min_quantity": "1", "price": "1"}],
+        }}
+        self.assertIn("data:MAT-TEST", {qid for qid, _ in facts.questions()})
+
+        async def extracted(*args, **kwargs):
+            return {"materials": [{"material_number": "MAT-TEST", "free_stock": 7, "stock_lead_weeks": 2}]}
+
+        with patch.object(llm, "chat_json", extracted):
+            await facts._extract("material", "Inventory record", "https://erp.example/material-stock", "erp", "stock")
+
+        material = facts.inputs().materials[0]
+        self.assertEqual((material.stock, material.stock_lead_weeks), (7, 2))
+        self.assertNotIn("data:MAT-TEST", {qid for qid, _ in facts.questions()})
+
 
 class LogFailureScenarios(unittest.IsolatedAsyncioTestCase):
     """Regression & diagnostic tests for failure modes observed in sandbox runs."""
