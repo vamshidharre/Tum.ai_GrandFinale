@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4K0C5EV1E9QG6PZZF53HGP7",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "PROJECT_STATUS.md",
+    "starter-kit/tests/fixtures/account.html",
+    "starter-kit/tests/fixtures/confirm_submit.html",
+    "starter-kit/tests/fixtures/decoy_triplet.html",
+    "starter-kit/tests/fixtures/details.html",
+    "starter-kit/tests/fixtures/downloads.html",
+    "starter-kit/tests/fixtures/form.html",
+    "starter-kit/tests/fixtures/frames_inner.html",
+    "starter-kit/tests/fixtures/frames_middle.html",
+    "starter-kit/tests/fixtures/frames_outer.html",
+    "starter-kit/tests/fixtures/gate.html",
+    "starter-kit/tests/fixtures/hover_menu.html",
+    "starter-kit/tests/fixtures/icon_buttons.html",
+    "starter-kit/tests/fixtures/load_more.html",
+    "starter-kit/tests/fixtures/load_more_remote.html",
+    "starter-kit/tests/fixtures/login.html",
+    "starter-kit/tests/fixtures/notes.txt",
+    "starter-kit/tests/fixtures/obfuscated_text.html",
+    "starter-kit/tests/fixtures/paged_list.html",
+    "starter-kit/tests/fixtures/price_list.csv",
+    "starter-kit/tests/fixtures/printable.html",
+    "starter-kit/tests/fixtures/pseudo_labels.html",
+    "starter-kit/tests/fixtures/time_pre.html",
+    "starter-kit/tests/fixtures/timed_dialog.html",
+    "starter-kit/tests/fixtures/timed_dialog_question.html",
+    "starter-kit/tests/fixtures/tooltip_canvas.html",
+    "starter-kit/tests/test_browser_env.py",
+    "tools/submit-batch-action.patch"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 4158,
+    "cache_read_tokens": 410352,
+    "output_tokens": 989,
+    "api_call_count": 2
+  }
+}

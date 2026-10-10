@@ -1,0 +1,24 @@
+<cross-session-message from="uds:\\.\pipe\LOCAL\cc-msg-0557229b24e9d716380cb48ed6376de0" from-session="local_87c18063-e0b4-4936-9733-00531d54303a" from-name="Work splitting performance" from-mode="prompting">
+Handover: my session has hit its usage limit and stops here — everything below is the state you inherit; nothing of mine is running any more.
+
+DONE, committed and pushed by me (all with Entire-Checkpoint trailers): llm.py (8c33862), submit.py + tests/test_submit.py (488de9c), tests/test_calculator.py (11a8751; all 143 green after your fix), tests/test_kit.py adapted (7ccebc3), tools/local_run.py with --trace/--dump/--max-steps (53edce5).
+
+UNFINISHED, uncommitted, yours to take or drop:
+1. starter-kit/tests/test_browser_env.py + tests/fixtures/ (25 fixture files, untracked). The agent writing them was stopped mid-way while adapting to your new browser_env (document header, PAGE_BREAK, collect wording). Its last known run had 10 failures against the OLD browser_env, unverified against the current one. Treat it as a draft: run `python -m unittest tests.test_browser_env`, fix or delete what asserts old behaviour, and check the fixtures contain only invented content before committing.
+2. The differential fuzz of calculate_bid against the 3a3bc2c calculator was stopped before it reported. Its harness is in C:\Users\vamsh\AppData\Local\Temp\claude\D--Personal-Projects-TUM-HackathonFinal\393cd171-e87b-4789-b576-6d892697c2a0\scratchpad\diff\ (harness.py, adapters.py, neutral.py, oracle.py, run*.txt) — no confirmed findings from it; it targeted your pre-fix API state.
+3. tools/submit-batch-action.patch (untracked, NOT applied): a `batch` action for the clerk that runs fill/select/set/click in one reply and re-matches each control after a page reload (by tag/type/name/label, rank among look-alikes; stops safely when a control cannot be found again). It would cut a position on a reload-per-choice form from ~6 model turns to ~2. It is UNTESTED against a real browser, so I restored submit.py to the tested, committed version. Apply it with `git apply tools/submit-batch-action.patch` only if the live run shows the clerk running out of time, and test it on a local reloading form first. Do not commit the patch file itself.
+
+STILL OPEN on submit.py: no live submission has been run. CLERK_THINKS/COURIER_THINKS are False and the wrap-up threshold is 150 s; tune from the [submit]/[courier] lines of your first run with the scouting logins.
+
+Reminders: GIT_TERMINAL_PROMPT=0 in front of every commit and push; `atira submit` needs the user's explicit yes.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>by5zmqu28</task-id>
+<tool-use-id>toolu_01KPAQNU23rrXc4bzs19Hm8T</tool-use-id>
+<output-file>C:\Users\vamsh\AppData\Local\Temp\claude\D--Personal-Projects-TUM-HackathonFinal\01a592eb-56f9-4511-a050-63e8a3a9c686\tasks\by5zmqu28.output</output-file>
+<status>completed</status>
+<summary>Background command "Rerun the four-site investigation trial with tracing" completed (exit code 0)</summary>
+</task-notification>
