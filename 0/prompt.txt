@@ -1,0 +1,28 @@
+can you give me team name
+
+---
+
+can you give me related to the task?
+
+---
+
+alright I did and this might be useful for you now 
+
+"Overview
+Where your team stands, and what to do next.
+Next steps
+1 of 5 done
+✓Create or join a team(done)
+2Install the CLI and sign in(current)Once per computer. The CLI tests, submits and follows your runs, and connects your coding agent to do the same.macOS and Linux
+curl -fsSL https://ehl-challenge.atira.ai/install.sh | sh export PATH="$HOME/.local/bin:$PATH" atira login
+Windows, in PowerShell
+irm https://ehl-challenge.atira.ai/install.ps1 | iex atira login
+Optional: your coding agent (MCP)
+Lets Claude Code or Codex start test runs, read logs, see each browser's screen and, once you say yes, submit. Use the line for the one you have. Or just tell it: Read https://ehl-challenge.atira.ai/llms.txt and set us up. [Other clients and the tools](https://ehl-challenge.atira.ai/docs/mcp.md)
+Claude Code
+claude mcp add atira -- atira mcp
+Codex
+codex mcp add atira -- atira mcp
+3Scout the websites(upcoming)
+4Start a test run(upcoming)
+5Submit for a ranked run"
