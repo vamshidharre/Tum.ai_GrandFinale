@@ -1,0 +1,65 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4JK16TTJENJTPJGBQD2ZQWJ",
+  "session_id": "722d6332-73d9-49af-be4d-dd125c69723f",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T09:41:46.1325824Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".agents/rules/entire-hackathon.md",
+    ".cursorrules",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "72316aeb11ae",
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T09:41:46.1068398Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 0,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1304,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/hooks.json": 28,
+        ".agents/rules/entire-hackathon.md": 8,
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/settings.json": 101,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".claude/skills/entire/SKILL.md": 15,
+        ".codex/agents/entire.toml": 13,
+        ".codex/hooks.json": 88,
+        ".cursor/hooks.json": 40,
+        ".cursor/skills/entire-search/SKILL.md": 22,
+        ".cursorrules": 4,
+        ".factory/settings.json": 85,
+        ".factory/skills/entire-search/SKILL.md": 22,
+        ".gemini/settings.json": 141,
+        ".github/hooks/entire.json": 68,
+        ".github/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22,
+        ".pi/extensions/entire/index.ts": 147,
+        ".pi/skills/entire-search/SKILL.md": 22,
+        "AGENTS.md": 83,
+        "CLAUDE.md": 57,
+        "GEMINI.md": 3
+      }
+    }
+  ]
+}

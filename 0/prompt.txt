@@ -1,0 +1,28 @@
+alright we are in hackthon we got three tasks. 
+
+here is our git repo: https://github.com/vamshidharre/Tum.ai_GrandFinale.git
+
+here is the event: https://tum-ai.notion.site/REDACTED#3eb7306bfd6280b5be44ddbbbd85a492
+
+---
+
+Beep, boop. Entire is here with CEO Thomas Dohmke 🚀
+
+How we score your submissions
+Make effective use of Entire: capture your agent sessions so your repo gets continuous memory and your agents learn from every attempt, fix and decision.
+
+Your guide this weekend
+https://hack.entire.io/ehl-munich-2026/
+
+🔥 Trails
+How we reimagine code review in the agentic era. You’ll see it in Thomas’s demo. Want exclusive access during the hackathon? Fill in the form in the guide and we turn it on for you.
+
+Need help?
+Post in entire and @Haimantika and I will jump in.
+
+Stay in the loop
+Join our Discord for the latest and greatest: https://discord.gg/XzhmCqcmQ
+
+implement this and also mention in the rules of this project 
+
+so in future if I use claude or other LLM, it has to be known this rule of the hackathon
