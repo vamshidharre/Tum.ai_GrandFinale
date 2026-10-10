@@ -1,1 +1,110 @@
-<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>
+on this I want to do a deep research and can you write me the prompt. I want to ask other reseach models and also include the rules of the task also and state the task neatly in tthe deep research prompt. neatly and mention refer research papers and all the research existed. 
+
+Write neat and correct prompt
+
+---
+
+write me the prompt 
+
+" Run the test run one at attime and achieve and focus on scoring the 100/100 score. That is your goal. Go through the rules of the task and everything and after each run go through logs and results and know what went wrong and what didnot go wrong. also what is happenign when the tabs are opened and learn and improve the approach each time and finally achieve the goal. "
+
+---
+
+are the website connected to each other?
+Cant we access four screens at once and reduce the time?
+
+---
+
+so the model has to open the websites right?
+
+---
+
+then after what it does?
+
+---
+
+suppose there is table in the website and it has information and if it extracted normally and if we extract exactly and get it then will that improve our score?
+
+"ling to load, so it was replaced by a fresh one: opened https://atira-rfq-tender-portal.kyora.run/
+14:58 [stdout] [submit 05 t+237s] (read 0.3s, model 2.2s, act 90.0s) Fresh tab at the search page. I'll open the tender to reach the submission form. | [{"do": "click", "id": 9}] | click took longer than 45 s and was stopped; the page may be stuck ; verification: could not re-read the page within 45 s
+17:43 [stderr] [llm] submit: attempt 1 failed, no reply within 120 s"
+
+What could be the reasons for failing? can you list me down the problems?
+
+---
+
+The best ways for an AI agent to click and interact with a website depend on whether you are **building/optimizing the website so agents can interact with it easily, or controlling the agent to click elements on an external site**.
+
+---
+
+**1. If You Are Optimizing Your Website for AI Agents**
+
+To make your website easy, fast, and reliable for AI agents to click and navigate:
+
+- **Implement WebMCP:** Use the emerging **WebMCP** standard (supported by Chrome, Meta AI, and ChatGPT Desktop) to declare a direct list of available tools and actions on your site. This lets agents call functions directly instead of guessing UI selectors. [[1](https://www.youtube.com/shorts/3DTFzaFkUXw), [2](https://www.youtube.com/shorts/bpP2Qo0_-qU?vl=en), [3](https://blog.cloudflare.com/browser-run-for-ai-agents/)]
+- **Use Semantic HTML & Accessible Attributes:** Build elements with native HTML tags (`<button>`, `<nav>`, `<a href="...">`) rather than generic `<div>` tags. Add clear `aria-label` attributes to every button, link, and input so vision and accessibility trees can identify targets accurately, as outlined in the [**Agentic Browsing Guide**](https://abdulaouwal.com/blog/agentic-browsing-guide/). [[1](https://abdulaouwal.com/blog/agentic-browsing-guide/), [2](https://nohacks.co/blog/how-ai-agents-see-your-website)]
+- **Provide an `LLM.txt` or `agents.md` File:** Place a plain-text instructions file at your domain root (following Shopify's pattern) to guide agents directly to key forms, endpoints, or rules. [[1](https://www.youtube.com/shorts/3DTFzaFkUXw)]
+- **Use Direct APIs or Protocols:** For e-commerce, integrate the **Universal Commerce Protocol (UCP)** or plugins like WooCommerce to bypass clunky visual clicks. [[1](https://www.youtube.com/shorts/3DTFzaFkUXw)]
+
+---
+
+**2. If You Are Building or Running an AI Agent**
+
+If you need your agent to programmatically click and navigate websites, use these methods ranked by reliability:
+
+- **Direct API Calls (Most Reliable):** Whenever possible, have the agent call internal or public APIs rather than rendering a visual browser. It consumes fewer tokens, avoids UI breakage, and runs instantly. [[1](https://www.reddit.com/r/AI_Agents/comments/1rw219y/best_way_to_let_agents_interact_with_websites/), [2](https://www.olostep.com/blog/ai-agents-web-access)]
+- **Headless Browsers with Automation Frameworks:** Use tools like **Playwright**, **Stagehand**, or **browser-use** to let the agent programmatically locate DOM nodes, click buttons, and fill forms. [[1](https://blog.cloudflare.com/browser-run-for-ai-agents/), [2](https://www.olostep.com/blog/ai-agents-web-access)]
+- **Vision & Accessibility Tree Agents:** Use modern agent frameworks (such as Anthropic Claude, Google Mariner, or Playwright MCP) that combine DOM/accessibility trees with computer vision screenshots to interpret page changes and adapt if layouts shift. [[1](https://web.dev/articles/ai-agent-site-ux), [2](https://www.reddit.com/r/AISEOInsider/comments/1q640ig/how_i_built_a_browser_agent_that_clicks_types_and/), [3](https://nohacks.co/blog/how-ai-agents-see-your-website)]
+- **Cloud Browser Infrastructure:** Run tasks through remote cloud browser environments like **Browserbase**, **Cloudflare Browser Run**, or **Nano Browser** to manage session recordings, CDP (Chrome DevTools Protocol) control, and concurrency. [[1](https://mastra.ai/articles/best-ai-agent-search-tools), [2](https://www.reddit.com/r/AISEOInsider/comments/1q640ig/how_i_built_a_browser_agent_that_clicks_types_and/), [3](https://blog.cloudflare.com/browser-run-for-ai-agents/)]
+
+
+
+Do you have these knowledge?
+
+---
+
+what if we can download the data once here from submission and see what exactly are thy keeping in it. See exactly what it is there. thoroughly check and study and prepare our models accordingly. then it is good right?
+
+---
+
+alright what if we use autofil kind of extension? because normally we use the autofil in day to day life which make our life so easy. What do you think?
+
+---
+
+then what exactly is our bottleneck?
+
+---
+
+# Files pasted by the user:
+
+## "[setup] warning: Failed to hardlink files; falling back to full copy. This may …": C:\Users\vamsh\.codex/attachments/7f59f2d3-c456-451c-981f-e7a14d59436b/Pasted text.txt
+
+## My request:
+can you check this "[https://ehl-challenge.atira.ai/runs/run_44a626efbd537259](https://ehl-challenge.atira.ai/runs/run_44a626efbd537259)
+
+
+
+so get the code and start working on it and fix this
+
+
+
+"Our **main bottleneck is reliable completion of the workflow**, especially the handoff from gathering evidence to submitting and confirming the bid—not the calculator or simply opening four websites.
+
+The run traces show two ways this breaks:
+
+- **Agents can get stuck repeating unproductive actions.** The mail agent kept revisiting an email marked “not sent,” instead of finding valid evidence or escalating the problem.
+- **The submission path is fragile and slow.** In one failed run, the bid had been worked out, but a tender-page click stalled, a model call timed out, and the agent eventually stopped without a confirmed submission.
+
+So the priority is to make each agent recognize progress versus a loop, stop or escalate after bounded retries, and make the final flow verify each transition through **form filled → TAN accepted → submission confirmed**. Faster, more reliable table extraction and form filling may help, but they’re secondary until the agent can reliably finish the job."
+
+
+
+the same code I have submitted for score run and here is hte log data
+
+
+
+""
+
+
+
+please fix it.

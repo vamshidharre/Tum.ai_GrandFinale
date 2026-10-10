@@ -2,7 +2,8 @@
   "cli_version": "0.11.4",
   "checkpoint_id": "01M4KTZY18QJZ778VEKZXVN1NQ",
   "strategy": "manual-commit",
-  "checkpoints_count": 38,
+  "branch": "codex/robustness-runfix",
+  "checkpoints_count": 13,
   "files_touched": null,
   "sessions": [
     {
@@ -14,10 +15,11 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 1213794,
+    "input_tokens": 355839,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 49274112,
-    "output_tokens": 167416,
-    "api_call_count": 440
+    "cache_read_tokens": 18669824,
+    "output_tokens": 59246,
+    "api_call_count": 140,
+    "subagent_tokens_complete": true
   }
 }

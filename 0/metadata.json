@@ -3,17 +3,60 @@
   "checkpoint_id": "01M4KTZY18QJZ778VEKZXVN1NQ",
   "session_id": "01a12613-e7fa-7990-a1ff-7660f0b09ac9",
   "strategy": "manual-commit",
-  "created_at": "2026-10-10T21:20:10.2539604Z",
-  "checkpoints_count": 38,
-  "files_touched": null,
+  "created_at": "2026-10-10T21:20:17.2548858Z",
+  "branch": "codex/robustness-runfix",
+  "checkpoints_count": 13,
+  "save_step_count": 1,
+  "files_touched": [],
   "agent": "Codex",
-  "model": "",
-  "compact_transcript_start": 0,
+  "model": "gpt-6-luna",
+  "turn_id": "9fa7953324ef",
+  "checkpoint_transcript_start": 2490,
+  "transcript_lines_at_start": 2490,
+  "compact_transcript_start": 332,
   "token_usage": {
-    "input_tokens": 1213794,
+    "input_tokens": 355839,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 49274112,
-    "output_tokens": 167416,
-    "api_call_count": 440
-  }
+    "cache_read_tokens": 18669824,
+    "output_tokens": 59246,
+    "api_call_count": 140,
+    "subagent_tokens_complete": true
+  },
+  "session_metrics": {
+    "turn_count": 38
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 2186,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "DEEP_RESEARCH_PROMPT.md": 139,
+        "goal.md": 41,
+        "research_notes/Reliable multi site web agents/coordination_and_routing.md": 568,
+        "research_notes/Reliable multi site web agents/loop_and_stall_recovery.md": 567,
+        "research_notes/Reliable multi site web agents/patches/changed-facts-and-language.patch": 145,
+        "research_notes/Reliable multi site web agents/patches/test_changed_facts.py": 111,
+        "research_notes/Reliable multi site web agents/reliability_and_latency.md": 407,
+        "research_notes/Reliable multi site web agents/top_agent_design_choices.md": 208
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 2006,
+      "user_lines_removed": 0,
+      "agent_lines_added": 18044,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "research_notes/Reliable multi site web agents/coordination_and_routing.md": 568,
+        "research_notes/Reliable multi site web agents/loop_and_stall_recovery.md": 567,
+        "research_notes/Reliable multi site web agents/patches/changed-facts-and-language.patch": 145,
+        "research_notes/Reliable multi site web agents/patches/test_changed_facts.py": 111,
+        "research_notes/Reliable multi site web agents/reliability_and_latency.md": 407,
+        "research_notes/Reliable multi site web agents/top_agent_design_choices.md": 208
+      }
+    }
+  ]
 }
