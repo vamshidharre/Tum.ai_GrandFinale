@@ -14,6 +14,8 @@ import zipfile
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
+PAGE_LOAD_TIMEOUT_MS = 5_000
+
 # Renders one document. Returns {text, next}: `text` with ⟦FRAME:n⟧ markers where embedded documents go, `next` the
 # first unused element id. Every control gets data-aid="<id>" so it can be found again.
 SNAPSHOT_JS = r"""
@@ -313,28 +315,87 @@ class Tab:
         self.events: list[str] = []
         self.bad_status = 0
         self.loading: set = set()  # page, frame and data requests that have not come back yet
+        self.navigation_generation = 0
+        self.last_navigation_error = ""
         self._watch(page)
 
     def _watch(self, page) -> None:
+        try:
+            page.set_default_navigation_timeout(PAGE_LOAD_TIMEOUT_MS)
+        except Exception:  # noqa: BLE001
+            pass
         page.on("dialog", lambda dialog: asyncio.ensure_future(self._on_dialog(dialog)))
         page.on("response", self._on_response)
-        page.on("request", lambda request: self.loading.add(request) if request.resource_type in ("document", "xhr", "fetch") else None)
+        page.on("request", lambda request: self._on_request(page, request))
         page.on("requestfinished", lambda request: self.loading.discard(request))
         page.on("requestfailed", lambda request: self.loading.discard(request))
 
-    async def renew(self) -> str:
-        """Swap a broken tab for a fresh one in the same browser: same session and cookies, a clean page. A tab can get
-        stuck ("frame was detached", loads that never finish) while the website itself is fine: in sandbox runs the
-        investigators' tab kept timing out for minutes while a fresh tab on the same site loaded at once."""
+    def _on_request(self, page, request) -> None:
+        if page is not self.page:
+            return
+        if request.resource_type in ("document", "xhr", "fetch"):
+            self.loading.add(request)
+        try:
+            if page is self.page and request.is_navigation_request() and request.frame == page.main_frame:
+                self.navigation_generation += 1
+        except Exception:  # noqa: BLE001
+            pass
+
+    async def _replace_page(self) -> None:
+        """Replace a hung tab without consuming another sandbox browser slot."""
         old = self.page
         page = await old.context.new_page()
         self.page, self.frames, self.loading, self.bad_status = page, [], set(), 0
+        self.last_navigation_error = ""
         self._watch(page)
         try:
             await old.close()
         except Exception:  # noqa: BLE001
             pass
+
+    async def renew(self) -> str:
+        """Swap a broken tab for a fresh one in the same browser: same session and cookies, a clean page. A tab can get
+        stuck ("frame was detached", loads that never finish) while the website itself is fine: in sandbox runs the
+        investigators' tab kept timing out for minutes while a fresh tab on the same site loaded at once."""
+        await self._replace_page()
         return await self.goto(self.base_url + "/")
+
+    async def _recover_navigation(self, target: str, previous_url: str, action: str, error: Exception,
+                                  refresh_first: bool = True) -> str:
+        """After a bounded load wait, try a refresh and then one clean tab in this browser."""
+        timeout_s = PAGE_LOAD_TIMEOUT_MS / 1000
+        self.events.append(f"{action} did not load within {timeout_s:g}s; trying browser recovery")
+        if refresh_first and self.page.url not in ("", "about:blank"):
+            try:
+                await self.page.reload(wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT_MS)
+                await self.settle()
+                if self.page.url != previous_url or self.page.url == target:
+                    self.last_navigation_error = ""
+                    return f"{action} exceeded {timeout_s:g}s; refreshed successfully at {self.page.url}"
+            except Exception:  # noqa: BLE001
+                pass
+
+        await self._replace_page()
+        try:
+            await self.page.goto(target, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT_MS)
+            await self.settle()
+            self.last_navigation_error = ""
+            return f"{action} exceeded {timeout_s:g}s; reopened the tab and loaded {self.page.url}"
+        except Exception as reopen_error:  # noqa: BLE001
+            self.last_navigation_error = f"{target} did not load after refresh/reopen: {str(reopen_error)[:160]}"
+            return (f"could not load {target} within {timeout_s:g}s; refresh and reopen both failed: "
+                    f"{str(error)[:100]} | {str(reopen_error)[:100]}")
+
+    async def _finish_navigation_if_started(self, previous_url: str, generation: int, action: str) -> str | None:
+        """Bound document loads initiated by controls such as links and form submits."""
+        if self.navigation_generation == generation and self.page.url == previous_url:
+            return None
+        target = self.page.url if self._on_site(self.page.url) else previous_url
+        try:
+            await self.page.wait_for_load_state("domcontentloaded", timeout=PAGE_LOAD_TIMEOUT_MS)
+            return None
+        except Exception as error:  # noqa: BLE001
+            return await self._recover_navigation(target, previous_url, action, error)
 
     async def _on_dialog(self, dialog):
         self.events.append(f'the browser asked "{dialog.message}" ({dialog.type}); it was accepted')
@@ -421,6 +482,10 @@ class Tab:
 
     async def read(self) -> str:
         """The current page as text, with fresh element ids."""
+        if self.last_navigation_error:
+            self.document = f"url: {self.page.url}\ntitle: page unavailable\n{self.last_navigation_error}"
+            self.document_source = self.page.url
+            return self.document
         for _ in range(4):  # a page that navigates while it is read is read again
             await self.settle()
             self.frames = []
@@ -489,13 +554,20 @@ class Tab:
         if info["disabled"]:
             return f"[{aid}] is disabled (inside a locked or inert area?); nothing happened"
         before = self.page.url
+        navigation_before = self.navigation_generation
         try:
-            await locator.click(timeout=2500)
-        except Exception:  # noqa: BLE001  hidden in a collapsed menu, or covered: activate it directly
+            await locator.click(timeout=PAGE_LOAD_TIMEOUT_MS)
+        except Exception as error:  # noqa: BLE001  hidden in a collapsed menu, or covered: activate it directly
+            if self.navigation_generation != navigation_before or self.page.url != before:
+                target = self.page.url if self._on_site(self.page.url) else before
+                return await self._recover_navigation(target, before, "click navigation", error)
             try:
                 await locator.evaluate("el => el.click()")
             except Exception as error:  # noqa: BLE001
                 return f"could not click [{aid}]: {str(error)[:150]}"
+        recovery = await self._finish_navigation_if_started(before, navigation_before, "click navigation")
+        if recovery:
+            return recovery
         await self.settle()
         if await self._modal_is_open():
             return "the page now has a modal dialog; read it before acting behind it"
@@ -511,7 +583,16 @@ class Tab:
         except Exception as error:  # noqa: BLE001
             return f"could not fill [{aid}]: {str(error)[:150]}"
         if enter:
-            await locator.press("Enter")
+            before, navigation_before = self.page.url, self.navigation_generation
+            try:
+                await locator.press("Enter", timeout=PAGE_LOAD_TIMEOUT_MS)
+            except Exception as error:  # noqa: BLE001
+                if self.navigation_generation != navigation_before or self.page.url != before:
+                    return await self._recover_navigation(self.page.url, before, "form submission", error)
+                return f"could not press Enter in [{aid}]: {str(error)[:150]}"
+            recovery = await self._finish_navigation_if_started(before, navigation_before, "form submission")
+            if recovery:
+                return recovery
             await self.settle()
         if await self._modal_is_open():
             return "the page now has a modal dialog; read it before acting behind it"
@@ -576,27 +657,34 @@ class Tab:
         target = urljoin(self.page.url if self._on_site(self.page.url) else self.base_url + "/", str(url).strip())
         if not self._on_site(target):
             return f"{target} is not on this website; you only work on {self.base_url}"
+        previous_url = self.page.url
         try:
-            await self.page.goto(target, wait_until="domcontentloaded", timeout=20000)
+            await self.page.goto(target, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT_MS)
         except Exception as error:  # noqa: BLE001
-            return f"could not open {target}: {str(error)[:150]}"
+            return await self._recover_navigation(target, previous_url, "navigation", error)
         await self.settle()
+        self.last_navigation_error = ""
         return f"opened {self.page.url}"
 
     async def back(self) -> str:
+        previous_url = self.page.url
         try:
-            await self.page.go_back(wait_until="domcontentloaded", timeout=15000)
+            await self.page.go_back(wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT_MS)
         except Exception as error:  # noqa: BLE001
-            return f"could not go back: {str(error)[:120]}"
+            target = self.page.url if self._on_site(self.page.url) else previous_url
+            return await self._recover_navigation(target, previous_url, "back navigation", error)
         await self.settle()
+        self.last_navigation_error = ""
         return f"went back to {self.page.url}"
 
     async def reload(self) -> str:
+        target = self.page.url
         try:
-            await self.page.reload(wait_until="domcontentloaded", timeout=15000)
+            await self.page.reload(wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT_MS)
         except Exception as error:  # noqa: BLE001
-            return f"could not reload: {str(error)[:120]}"
+            return await self._recover_navigation(target, target, "reload", error, refresh_first=False)
         await self.settle()
+        self.last_navigation_error = ""
         return "reloaded the page"
 
     async def login(self) -> str:
@@ -609,7 +697,16 @@ class Tab:
             except Exception:  # noqa: BLE001
                 continue
             if outcome == "ok":
-                await frame.locator("[data-login-password]").first.press("Enter")
+                before, navigation_before = self.page.url, self.navigation_generation
+                try:
+                    await frame.locator("[data-login-password]").first.press("Enter", timeout=PAGE_LOAD_TIMEOUT_MS)
+                except Exception as error:  # noqa: BLE001
+                    if self.navigation_generation != navigation_before or self.page.url != before:
+                        return await self._recover_navigation(self.page.url, before, "login navigation", error)
+                    return f"login submit did not complete: {str(error)[:150]}"
+                recovery = await self._finish_navigation_if_started(before, navigation_before, "login navigation")
+                if recovery:
+                    return recovery
                 await self.settle()
                 return f"entered the credentials and submitted the login form; now at {self.page.url}"
         return outcome

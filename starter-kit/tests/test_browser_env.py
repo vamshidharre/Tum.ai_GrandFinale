@@ -20,12 +20,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from string import Template
 from typing import NamedTuple
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from playwright.async_api import async_playwright  # noqa: E402
 
+import browser_env  # noqa: E402
 from browser_env import Tab  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -47,6 +49,7 @@ class FixtureSite:
     def __init__(self):
         self.requests: list[tuple[str, str, dict]] = []  # (method, path with query, form fields), in order
         self.sessions: dict[str, str] = {}  # session cookie -> user name
+        self.navigation_attempts: dict[str, int] = {}
         self.ticket = secrets.token_hex(4)
         site = self
 
@@ -86,6 +89,13 @@ class FixtureSite:
         cookie = re.search(r"session=(\w+)", request.headers.get("cookie") or "")
         user = self.sessions.get(cookie[1]) if cookie else None
         path = url.path
+        if path in ("/recover-on-refresh", "/recover-on-reopen", "/unavailable"):
+            attempt = self.navigation_attempts.get(path, 0) + 1
+            self.navigation_attempts[path] = attempt
+            delayed_attempts = {"/recover-on-refresh": 1, "/recover-on-reopen": 1}
+            if path == "/unavailable" or attempt <= delayed_attempts.get(path, 0):
+                time.sleep(self.DELAY)
+            return self.send(request, 200, "<!doctype html><title>Recovered</title><h1>Recovered page</h1>")
         if path.startswith("/slow/"):
             time.sleep(self.DELAY)
             path = path[len("/slow"):]
@@ -551,6 +561,36 @@ class Acting(Case):
         await tab.reload()
         self.assertEqual(SITE.paths.count("/details.html"), 3)
         self.assertIn("Weight: 12 kg", await tab.observe())
+
+    async def test_navigation_recovery_can_refresh_the_current_page(self):
+        tab = await self.open("/arrived/recovery-target")
+        result = await tab._recover_navigation(
+            tab.page.url, SITE.url + "/arrived/previous", "navigation", RuntimeError("timed out"))
+        self.assertIn("refreshed successfully", result)
+        self.assertIn("You arrived at recovery-target", await tab.observe())
+
+    async def test_slow_navigation_reopens_the_tab_when_refresh_also_times_out(self):
+        tab = await self.open("/details.html")
+        original_page = tab.page
+        SITE.requests.clear()
+        with patch.object(browser_env, "PAGE_LOAD_TIMEOUT_MS", 500), patch.object(FixtureSite, "DELAY", 0.8):
+            result = await tab.goto("/recover-on-reopen")
+        self.assertIn("reopened the tab", result)
+        self.assertIsNot(tab.page, original_page)
+        self.assertTrue(original_page.is_closed())
+        self.assertIn("Recovered page", await tab.observe())
+        self.assertEqual(SITE.paths.count("/recover-on-reopen"), 2)
+
+    async def test_unreachable_page_returns_a_readable_failure_after_bounded_recovery(self):
+        tab = await self.open("/details.html")
+        SITE.requests.clear()
+        with patch.object(browser_env, "PAGE_LOAD_TIMEOUT_MS", 500), patch.object(FixtureSite, "DELAY", 0.8):
+            result = await tab.goto("/unavailable")
+            observation = await tab.observe()
+        self.assertIn("refresh and reopen both failed", result)
+        self.assertIn("did not load after refresh/reopen", observation)
+        self.assertGreaterEqual(SITE.paths.count("/unavailable"), 2)
+        self.assertLessEqual(SITE.paths.count("/unavailable"), 3)
 
     async def test_login_signs_in_with_the_credentials_of_the_site(self):
         tab = await self.open("/account", LOGIN)
