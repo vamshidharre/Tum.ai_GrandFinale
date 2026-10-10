@@ -1,0 +1,11 @@
+we decided to do this task
+
+Hi all!
+
+Feel free to reach out either via chat or in-person in case you have any questions ^^
+
+We optimized the challenge to work really well for coding agents (through mcp/cli) - just point your agent at the url and it'll walk you through onboarding and can then get going re: implementation and submissions (first-class debug support for the sandboxed runs etc. included) - good luck, happy hillclimbing & make sure to melt our GPUs!
+
+https://ehl-challenge.atira.ai/ 
+
+First give me the best team name for us and tell me the approach and all
