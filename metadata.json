@@ -3,8 +3,14 @@
   "checkpoint_id": "01M4K4ZDYEY3TGR0Y8AXFDC9NQ",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 7,
-  "files_touched": null,
+  "checkpoints_count": 10,
+  "files_touched": [
+    "TEAM.md",
+    "starter-kit/agent.py",
+    "starter-kit/tests/test_validate.py",
+    "starter-kit/validate.py",
+    "starter-kit/worker.py"
+  ],
   "sessions": [
     {
       "metadata": "/0/metadata.json",
@@ -18,6 +24,12 @@
       "transcript": "/1/full.jsonl",
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
+      "prompt": ""
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "content_hash": "/2/content_hash.txt",
       "prompt": ""
     }
   ],

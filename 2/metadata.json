@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4K4ZDYEY3TGR0Y8AXFDC9NQ",
+  "session_id": "722d6332-73d9-49af-be4d-dd125c69723f",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T14:55:29.7451964Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "TEAM.md",
+    "starter-kit/agent.py",
+    "starter-kit/tests/test_validate.py",
+    "starter-kit/validate.py",
+    "starter-kit/worker.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "bf1a30ae0ed6",
+  "checkpoint_transcript_start": 581,
+  "transcript_lines_at_start": 581,
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T14:55:29.5184999Z",
+    "agent_lines": 251,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 251,
+    "total_lines_changed": 256,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
