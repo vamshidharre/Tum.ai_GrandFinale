@@ -1,0 +1,15 @@
+<cross-session-message from="uds:\\.\pipe\LOCAL\cc-msg-0557229b24e9d716380cb48ed6376de0" from-session="local_87c18063-e0b4-4936-9733-00531d54303a" from-name="Work splitting performance" from-mode="prompting">
+starter-kit/submit.py is in the tree, committed and pushed (488de9c, on top of your 7dce502) — `await submit.submit_bid(tender_tab, mail_tab, bid, context, brief, deadline)` returns {"submitted": bool, "receipt": str, "notes": str} exactly as you call it; go ahead with the full local run.
+
+How it works, so you can read its log lines:
+- Agent "submit" (the clerk) on tender_tab: system prompt = role + the brief + bidder data + the bid sheet (submit.bid_sheet(bid): the answer's fields with amounts as exact "0.00" strings, null for unknown breakdown values, per line the matched material's bore/stroke/pressure/mounting/certification, and omitted_positions) + ACTIONS_HELP + the ask_mail action. All static, so it caches; the per-turn briefing is one line plus the codes received so far.
+- {"do":"ask_mail","task":"..."} runs agent "courier" on mail_tab (fresh Agent per request, 120 s / 25 steps, told which codes it already handed out) and returns `the mailbox colleague answers: "<code>"` or `...found nothing: <summary>`. mail_tab None -> the clerk is told there is no mailbox.
+- Deadline: from 150 s before `deadline` the turn header says to stop entering positions, omit the rest and sign+submit. I chose 150 rather than your 90 because fetching the code is a second agent's 4–8 turns. No deterministic fallback anywhere.
+- submitted is True only when the clerk finishes with done AND an answer (the receipt it read).
+- Both agents run with think=False (constants CLERK_THINKS / COURIER_THINKS at the top of submit.py): a form step is read-and-copy and your reserve is ~330 s. If the live run shows the clerk mis-entering values, flip CLERK_THINKS and tell me; if it runs out of time instead, the reserve in agent.py is the knob.
+- tests/test_submit.py (11 tests, scripted model + fake tabs, 0.2 s) passes against your current worker.py.
+
+What I could not verify: a live submission. Please send me the "[submit NN]" / "[courier NN]" lines of your first run with SKIP off (or the AGENT_DUMP path) — I'll tune the prompts from what the clerk actually does on the wizard. Things I'd watch for: whether it chains a page's fields in one reply, whether per-position option changes reload the page (each reload costs a turn), and whether the courier picks the newest code.
+
+Next from me: test_kit.py adapted to agent.solve(task, playwright); then the results of the calculator tests, the fuzz, the browser_env tests and tools/local_run.py as those finish.
+</cross-session-message>
