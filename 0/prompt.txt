@@ -2,3 +2,15 @@ I got the best score for this [https://ehl-challenge.atira.ai/runs/run_6baaba90a
 
 
 now can you compare with the old results also where I got the 100 score and what are the difference between all these 100 score codes and we need one final robust model where we need to get the 100 score all the time.
+
+---
+
+can you tell me where that code with curent score as best cost  x time  is there in my computer?
+
+---
+
+during the tender we have many file numbers but all the time it is going to only one and applying? I dont know why it is doing like that. you need to load more all the time. and check every possiblity
+
+for now you can check "[https://atira-rfq-tender-portal.kyora.run/](https://atira-rfq-tender-portal.kyora.run/)"
+
+please implement this and be smart. we have to win the hackathon. Thanks
