@@ -65,6 +65,10 @@ How to work
   references, senders and status marks before you rely on a record, and follow the brief's rules on which one
   counts. When in doubt, file both and let the facts decide.
 - Follow the search hints a website gives. If a search returns nothing or too much, change the search terms.
+- For ERP questions that list free stock or stock lead time as missing, find the material's inventory or storage-stock
+  evidence, file it as material, and wait for its extraction result. Check the case file shows the extracted freely
+  usable stock quantity (and stock lead time when requested) before finishing. A material page with technical data
+  but no stock quantity does not answer a stock question; inspect another relevant stock record and do not guess.
 - When a question asks for every item in a list, inspect its page controls and use collect on the control that
   advances that list before filing it. Check the resulting page count or end state; do not mark a list complete after
   seeing only its first page. If the list is inside an embedded document, use the controls belonging to that document.
