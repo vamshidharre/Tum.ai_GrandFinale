@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4KCAZG3AHK5MHVZ4E98002R",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 8,
+  "checkpoints_count": 14,
   "files_touched": [
     "starter-kit/agent.py",
     "starter-kit/calculator.py",
@@ -27,6 +27,12 @@
       "transcript": "/1/full.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
