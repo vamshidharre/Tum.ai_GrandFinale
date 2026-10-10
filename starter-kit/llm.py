@@ -24,13 +24,26 @@ CALL_TIMEOUT = 150  # seconds: a model that scaled to zero is slow to answer its
 WARM_TIMEOUT = 120  # a quick call (thinking off) this late once the model is awake is stuck: ask again. 75 s cut off
 # a first turn with a large prompt under load (submit agent, sandbox test run 54c78c38: 85 s lost to the retry).
 # Calls with thinking on (fact extraction) keep CALL_TIMEOUT: under load they legitimately take longer.
+# One request is given up long before those limits. A call that has no reply after this long is not slow, it is
+# lost: in sandbox run 0b6deda6 nine calls never came back (the platform's own call list does not show them), while
+# the calls that did come back had a p95 below 10 s. So a second, identical request goes out once the first is slower
+# than almost every healthy call, the first answer is used and the other request is dropped. A model call has no side
+# effect, so asking twice is safe.
+STEP_CAP, STEP_HEDGE = 30, 10  # seconds for a quick call (thinking off, short answer): give up / send the backup
+LONG_CAP, LONG_HEDGE = 75, 25  # fact extraction and calls with thinking: a long answer takes longer
+COLD_HEDGE = 15  # the first call of a run keeps CALL_TIMEOUT (the model may still be waking) but gets its backup early
+MAX_BACKUPS_FLYING = 4  # backups in flight at once: they must never crowd out first requests
+BACKUP_SHARE = 0.2  # and may add at most this share of calls, plus a few at the start of a run
+RETRY_PAUSE = (0.2, 1.0)  # seconds before asking again after a lost request: it is no sign of overload
 MAX_TOKENS_CEILING = 16000  # a reply cut off by its token limit is asked again with twice the room, up to this
 PERMANENT = (400, 401, 403, 404, 413, 422)  # asking again rarely helps: one more try, then give up
 # The hosted Qwen's simulated prices in USD per million tokens, for the estimate in `summary`.
 PRICE_INPUT, PRICE_CACHED, PRICE_OUTPUT = 0.15, 0.016, 0.47
 REMINDER = "That reply was not a single JSON object. Answer again with exactly one JSON object and nothing else."
 
-STATS = {"calls": 0, "failed": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0, "seconds": 0.0}
+STATS = {"calls": 0, "failed": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0, "seconds": 0.0,
+         "backups": 0, "rescued": 0}  # backup requests sent, and how many of them brought the answer
+_backups = {"flying": 0}
 BY_LABEL: dict[str, list] = {}  # caller kind -> [calls, seconds], to see where a run spends its time
 _warm = {"done": False}
 
@@ -101,6 +114,66 @@ def parse_json_object(text: str | None) -> dict | None:
     return None
 
 
+def _limits(think: bool, max_tokens: int, label: str) -> tuple[float, float]:
+    """How long one request may take, and after how long its backup is sent."""
+    if not _warm["done"]:
+        return CALL_TIMEOUT, COLD_HEDGE
+    if think or max_tokens > 6000 or label.startswith("extract"):
+        return LONG_CAP, LONG_HEDGE
+    return STEP_CAP, STEP_HEDGE
+
+
+def _may_send_backup() -> bool:
+    return (_backups["flying"] < MAX_BACKUPS_FLYING
+            and STATS["backups"] < BACKUP_SHARE * STATS["calls"] + 3)
+
+
+async def _answer(make, gate: asyncio.Semaphore, cap: float, backup_after: float, label: str = ""):
+    """The reply to one request, asked a second time if the first is slow. The caller holds a slot of `gate` for the
+    first request; the backup takes its own. Raises asyncio.TimeoutError when nothing came back within `cap`
+    seconds, and the request's own error when every request that was sent has failed."""
+    async def backup():
+        async with gate:
+            STATS["calls"] += 1
+            return await make()
+
+    started = time.monotonic()
+    first = asyncio.ensure_future(make())
+    flying, second, decided = [first], None, False
+    try:
+        while True:
+            for task in flying:
+                if task.done() and not task.cancelled() and task.exception() is None:
+                    if task is second:
+                        STATS["rescued"] += 1
+                        print(f"[llm] {label or 'call'}: the backup request answered after "
+                              f"{time.monotonic() - started:.0f} s, the first one had not", file=sys.stderr)
+                    return task.result()
+            waiting = [task for task in flying if not task.done()]
+            if not waiting:
+                raise first.exception()
+            spent = time.monotonic() - started
+            if spent >= cap:
+                raise asyncio.TimeoutError
+            if not decided and spent >= backup_after:
+                decided = True
+                if _may_send_backup():
+                    _backups["flying"] += 1
+                    STATS["backups"] += 1
+                    second = asyncio.ensure_future(backup())
+                    flying.append(second)
+                    waiting.append(second)
+            limit = cap if decided else min(cap, backup_after)
+            await asyncio.wait(waiting, timeout=max(0.0, limit - spent), return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for task in flying:
+            if not task.done():
+                task.cancel()  # the loser: closing its connection frees the slot
+        await asyncio.gather(*flying, return_exceptions=True)
+        if second is not None:
+            _backups["flying"] -= 1
+
+
 def _count(usage, provider: str = "qwen") -> None:
     if usage is None:
         return
@@ -127,23 +200,22 @@ async def chat_json(messages: list[dict], *, think: bool = True, max_tokens: int
         return {}
     conversation = messages
     for attempt in range(1, ATTEMPTS + 1):
-        permanent = False
+        permanent, lost = False, False
+        cap, backup_after = _limits(think, max_tokens, label)
         try:
             async with gate:
                 STATS["calls"] += 1
                 started = time.monotonic()
                 try:
                     if provider == "openai":
-                        request = client.chat.completions.create(
-                            model=OPENAI_MODEL, messages=conversation, max_completion_tokens=max_tokens,
-                            response_format={"type": "json_object"})
+                        request = dict(model=OPENAI_MODEL, messages=conversation, max_completion_tokens=max_tokens,
+                                       response_format={"type": "json_object"})
                     else:
-                        request = client.chat.completions.create(
-                            model=MODEL, messages=conversation, temperature=0, max_tokens=max_tokens,
-                            response_format={"type": "json_object"},
-                            extra_body={"chat_template_kwargs": {"enable_thinking": think}})
-                    reply = await asyncio.wait_for(request,
-                        WARM_TIMEOUT if _warm["done"] and not think else CALL_TIMEOUT)
+                        request = dict(model=MODEL, messages=conversation, temperature=0, max_tokens=max_tokens,
+                                       response_format={"type": "json_object"},
+                                       extra_body={"chat_template_kwargs": {"enable_thinking": think}})
+                    reply = await _answer(lambda: client.chat.completions.create(**request), gate, cap,
+                                          backup_after, label)
                     _warm["done"] = True
                 finally:
                     spent = time.monotonic() - started
@@ -167,7 +239,7 @@ async def chat_json(messages: list[dict], *, think: bool = True, max_tokens: int
                 conversation = [*messages, {"role": "assistant", "content": content[:2000]},
                                 {"role": "user", "content": REMINDER}]
         except asyncio.TimeoutError:
-            problem = f"no reply within {WARM_TIMEOUT if _warm['done'] and not think else CALL_TIMEOUT} s"
+            problem, lost = f"no reply within {cap} s", True
         except APIStatusError as error:
             problem = f"HTTP {error.status_code}: {str(error)[:200]}"
             permanent = error.status_code in PERMANENT
@@ -181,7 +253,7 @@ async def chat_json(messages: list[dict], *, think: bool = True, max_tokens: int
               file=sys.stderr)
         if last:
             break
-        await asyncio.sleep(min(2 ** attempt, 20) * random.uniform(0.5, 1))
+        await asyncio.sleep(random.uniform(*RETRY_PAUSE) if lost else min(2 ** attempt, 20) * random.uniform(0.5, 1))
     return {}
 
 
@@ -194,4 +266,5 @@ def summary() -> str:
             f"({STATS['cached_tokens']} cached), {STATS['completion_tokens']} completion tokens, "
             f"{STATS['seconds']:.0f} s in calls, about ${cost:.4f}; by caller: "
             + ", ".join(f"{name} {calls}x/{seconds:.0f}s" for name, (calls, seconds) in sorted(BY_LABEL.items()))
+            + (f"; {STATS['backups']} backup requests, {STATS['rescued']} of them answered first" if STATS["backups"] else "")
             + (f"; openai tokens {STATS['openai_tokens']}" if STATS.get("openai_tokens") else ""))
