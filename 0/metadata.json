@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KCB7W0Y20JFXRBSJRXXB58",
+  "session_id": "01a12613-e7fa-7990-a1ff-7660f0b09ac9",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T17:04:10.4143491Z",
+  "branch": "codex/robustness-runfix",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-6-luna",
+  "turn_id": "4be7680b8b43",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 706543,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 20476672,
+    "output_tokens": 86163,
+    "api_call_count": 219
+  },
+  "session_metrics": {
+    "turn_count": 21
+  }
+}
