@@ -38,7 +38,7 @@ REGISTRY: dict[str, Check] = {check.name: check for check in (
           "(new tab, new conversation) while at least 2 minutes of investigation remain", True),
     Check("grounding", "every fact the extraction returns",
           "extracted numbers, keys and identifiers that do not appear in the page they came from", True,
-          default=False),  # off until a sandbox run shows it helps: it could also drop a value written differently
+          default=True),  # EVALUATION BRANCH eval/grounding-on: on, to measure against main where it is off
     Check("summary_check", "before the final signature",
           "a final confirmation on a page that does not show the bid's reference, positions and total", True),
 )}

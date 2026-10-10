@@ -41,7 +41,8 @@ class EvidenceProvenance(unittest.IsolatedAsyncioTestCase):
             return {"positions": [{"position": "1", "quantity": 4}, {"quantity": 9}, "not a record"]}
 
         with patch.object(llm, "chat_json", mixed):
-            await facts._extract("positions", "Position records", "https://portal.example/rfq", "tender", "mixed")
+            await facts._extract("positions", "Position records: position 1, quantity 4", "https://portal.example/rfq",
+                                 "tender", "mixed")
         self.assertEqual(set(facts.positions), {"1"})
         self.assertIn("dropped 2 malformed", facts.evidence[0]["validation"])
         self.assertIn("dropped 2 malformed", facts.evidence[0]["summary"])

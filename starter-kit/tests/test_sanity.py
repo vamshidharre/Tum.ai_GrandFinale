@@ -54,7 +54,7 @@ class Grounding(unittest.TestCase):
     def test_grounding_is_off_by_default_and_on_with_all(self):
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("SANITY_CHECKS", None)
-            self.assertFalse(sanity.enabled("grounding"))
+            self.assertTrue(sanity.enabled("grounding"))  # evaluation branch: on by default
         with mock.patch.dict(os.environ, {"SANITY_CHECKS": "all"}):
             self.assertTrue(sanity.enabled("grounding"))
 
