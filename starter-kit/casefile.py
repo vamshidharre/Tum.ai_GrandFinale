@@ -406,6 +406,7 @@ class CaseFile:
         elif kind == "mail":
             if _text(data.get("mailbox_address")) and "@" in data["mailbox_address"]:
                 self.mailbox = data["mailbox_address"].strip()
+                told.append("mailbox address")
             for row in data.get("messages") or []:
                 key = (str(row.get("sender")), str(row.get("timestamp")), str(row.get("subject")))
                 self.messages[key] = row
