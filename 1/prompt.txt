@@ -4,3 +4,11 @@ The first run failed because the signing mail got rejected by the courier as an 
 Why signing mail?
 
 did you read the task? If not please read the task from here completly: https://ehl-challenge.atira.ai/start
+
+---
+
+commit only to branch not to main and test run once
+
+---
+
+You can run 4 runs at once. So you can run
