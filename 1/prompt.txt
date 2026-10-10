@@ -1,0 +1,24 @@
+where are the test cases located?
+
+---
+
+so basically they have normal text in the website right?
+
+---
+
+but at the end it is extracting the text right?
+
+---
+
+so I have one idea
+instead of sending the data directly text to thier model
+
+what if we conver it to binary so wont that be fast`?
+
+---
+
+but rather than time we need accuracy. For that we need to refer some methods. For that I want to do a deep research on other LLM. For that can you write me the neat prompt and clarity prompt so that it understand. better and do the research correctly`?
+
+---
+
+put it in a .md file
