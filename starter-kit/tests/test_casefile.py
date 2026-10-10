@@ -8,10 +8,36 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import casefile  # noqa: E402
+import calculator  # noqa: E402
 import llm  # noqa: E402
 
 
 class EvidenceProvenance(unittest.IsolatedAsyncioTestCase):
+    async def test_quantity_change_without_its_own_unit_inherits_the_position_unit(self):
+        facts = casefile.CaseFile("brief", {"tender_reference": "TEST-0001", "scenario_date": "2030-01-01"})
+        facts.merge("positions", {"positions": [{"position": "POS-A", "quantity": 7,
+                                                    "unit": "piece", "unit_is_set": False,
+                                                    "requirement_ref": "REQ-A"}]})
+        prompts = []
+
+        async def extracted(messages, **kwargs):
+            prompts.extend(messages)
+            return {"answers": [{"number": "QA-TEST-1", "timestamp": "2030-01-01",
+                                  "quantity_changes": [{"position": "POS-A", "quantity": 11,
+                                                        "unit_is_set": None}]}]}
+
+        with patch.object(llm, "chat_json", extracted):
+            await facts._extract("clarifications", "Answer QA-TEST-1: POS-A has a binding quantity of 11.",
+                                 "https://portal.example/questions", "tender", "quantity-test")
+
+        system_prompt = " ".join(prompts[0]["content"].split())
+        self.assertIn("unit explicitly stated for that changed quantity", system_prompt)
+        self.assertIn("Do not infer the unit from another tender position", system_prompt)
+        inputs = facts.inputs()
+        quantities, unknown = calculator.final_quantities(inputs.positions, inputs.clarifications, {})
+        self.assertEqual(quantities, {"POS-A": 11})
+        self.assertEqual(unknown, [])
+
     async def test_successful_extraction_records_its_source_and_typed_result(self):
         facts = casefile.CaseFile("brief", {"tender_reference": "TEST-0001", "scenario_date": "2030-01-01"})
 

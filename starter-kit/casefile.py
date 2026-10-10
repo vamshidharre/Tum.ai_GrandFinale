@@ -41,6 +41,10 @@ How to extract
   day/month orders.
 - State only what the evidence says. Leave out every key the evidence says nothing about (no nulls, no empty
   lists). Never invent, convert or calculate.
+- For a bidder Q&A quantity change, `unit_is_set` describes only a unit explicitly stated for that changed quantity
+  in that answer: use true for sets/kits, false for pieces, and null when the answer gives only a number. Do not
+  infer the unit from another tender position or copy the tender position's unit into the answer. The calculator
+  inherits the position's own unit when the answer does not restate it.
 - Evidence can contain drafts, previews, templates, examples, look-alike records for other references and
   superseded content. Extract the authoritative original and set the flags that tell them apart.
 Reply with one JSON object of the requested shape and nothing else."""
@@ -53,7 +57,7 @@ SHAPES = {
     "clarifications": """Answers of the tender's bidder Q&A. One entry per answer; an answer that changes nothing still gets an entry.
 {"answers": [{"number": "<answer number>", "timestamp": "<when it was issued>",
   "withdraws": ["<number of an earlier answer this one withdraws>"],
-  "quantity_changes": [{"position": "<position>", "quantity": <new binding quantity>, "unit_is_set": <true|false|null if the unit is not restated>}],
+  "quantity_changes": [{"position": "<position>", "quantity": <new binding quantity>, "unit_is_set": <true only if this answer explicitly says sets/kits; false only if it explicitly says pieces; null if it gives no unit>}],
   "tech_amendments": [{"revision": "<specification revision it names>", "requirement_ref": "<requirement>",
      "attribute": "stroke|bore|pressure|mounting|certification", "value": "<new value, number without unit for the first three>"}],
   "assignments": [{"position": "<position>", "condition_group": "<key or null>", "packaging_tariff": "<key or null>",
