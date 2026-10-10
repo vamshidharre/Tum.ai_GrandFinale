@@ -1,0 +1,6 @@
+The first run failed because the signing mail got rejected by the courier as an “unsent draft” — a wording change introduced in commit 2d96c95, not by me. I’m restoring the courier wording that worked in all earlier runs today.
+
+
+Why signing mail?
+
+did you read the task? If not please read the task from here completly: https://ehl-challenge.atira.ai/start
