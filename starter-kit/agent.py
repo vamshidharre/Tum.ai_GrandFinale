@@ -96,6 +96,8 @@ class Team:
 
     def __init__(self, case: CaseFile, names: list[str], deadline: float):
         self.case, self.names, self.deadline = case, set(names), deadline
+        # so that a fact that changes is reported to every investigator (a case file without that list is left alone)
+        getattr(case, "agents", set()).update(names)
         self.idle: set[str] = set()
         self.finished = asyncio.Event()
         self.woken: dict[str, float] = {}  # when an agent was last woken for finished reading (at most every 30 s)

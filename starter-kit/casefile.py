@@ -34,6 +34,8 @@ as an agent read it from the page.
 
 How to extract
 - Copy identifiers, keys, references and names exactly as written.
+- The evidence can be in German, in English or in both: a label means the same fact in either language. Never
+  translate what you copy.
 - Amounts, prices, rates, masses and fees are STRINGS copied exactly as written, with their separators and any
   format hint that stands next to them. Give `number_format` wherever the shape asks: "en-US" if the source says the
   decimal sign is a point, "de-DE" if it is a comma (the usual case in German sources).
@@ -250,6 +252,9 @@ def validate_extraction(kind: str, data) -> tuple[dict | None, str]:
     return clean, note
 
 
+# The requirement values a material is matched against, with the words an agent reads for them.
+MATCHED_VALUES = (("bore_mm", "bore"), ("stroke_mm", "stroke"), ("pressure_bar", "pressure"), ("mounting", "mounting"),
+                  ("certification", "certification"), ("catalogue_group", "catalogue group"))
 QUIET_FIELDS = ("description", "unit", "number_format", "note")  # wording, not a fact the calculator uses
 
 
@@ -290,6 +295,9 @@ class CaseFile:
         self.answers: dict[str, tuple[str, str]] = {}  # question id -> (complete | absent, note)
         self.filed: set[str] = set()
         self.news: dict[str, list[str]] = {}
+        self.agents: set[str] = set()  # every investigator: a fact that changes has to reach all of them
+        self._resolved: dict[str, tuple] = {}  # requirement -> the values the agents were last asked to match
+        self.changed: dict[str, list[str]] = {}  # requirement -> how those values moved afterwards
         self.pending = 0
         self.pending_by_agent: dict[str, int] = {}
         self.version = 0
@@ -324,6 +332,51 @@ class CaseFile:
     def take_news(self, agent: str) -> list[str]:
         return self.news.pop(agent, [])
 
+    def _note_changed_requirements(self) -> None:
+        """A requirement whose values move after the agents were asked to match them (a Q&A amendment or a reserve
+        that is filed later) makes what was concluded from the old values worthless: a candidate that was ruled out
+        can be the match now, and an "absent" answer was given for values that no longer hold. The case file changes
+        silently at the head of a turn, so this says it out loud: every agent is told once, the open question keeps
+        saying it, and such an answer is opened again (sandbox run e3804980: the right material was rejected for 46
+        turns against a stroke the case file had already corrected)."""
+        facts = self.inputs()
+        answers = active_clarifications(facts.clarifications, self.scenario)
+        needs, waiting = resolve_requirements(facts.requirements, facts.governing, answers, facts.authorities)
+        for ref, need in needs.items():
+            if ref in waiting or need.missing():
+                continue  # not a value anybody was asked to match yet
+            now = tuple(getattr(need, name) for name, _ in MATCHED_VALUES)
+            before = self._resolved.get(ref)
+            self._resolved[ref] = now
+            if before is None:
+                continue
+            moved = [f"{label} {old} -> {new}" for (_, label), old, new in zip(MATCHED_VALUES, before, now)
+                     if not (same_text(old, new) if isinstance(old, str) and isinstance(new, str) else old == new)]
+            if not moved:
+                continue
+            self.changed.setdefault(ref, []).extend(moved)
+            reopened = self.answers.pop(f"material:{ref}", None) is not None
+            text = (f"CHANGED FACT: requirement {ref} changed after a later document was filed ({'; '.join(moved)}). "
+                    f"It is now bore {need.bore_mm} mm, stroke {need.stroke_mm} mm, {need.pressure_bar} bar, mounting "
+                    f"{need.mounting}, certification {need.certification or 'none'}. Whatever was compared with the "
+                    "old values must be compared again, also a candidate that was ruled out."
+                    + (f" The answer given to material:{ref} was for the old values and no longer counts: that "
+                       "question is open again." if reopened else ""))
+            print(f"[changed] requirement {ref}: {'; '.join(moved)}" + ("; absent answer reopened" if reopened else ""),
+                  flush=True)
+            for agent in self.agents:
+                self.news.setdefault(agent, []).append(text)
+
+    def _changed_note(self, qid: str) -> str:
+        """What an open question adds about a requirement that changed: it stays there as long as the question does."""
+        kind, _, ref = qid.partition(":")
+        moved = self.changed.get(ref) if kind == "material" else None
+        if not moved:
+            return ""
+        return (f" NOTE: this requirement changed while you were working ({'; '.join(moved[-4:])}). The values given "
+                "here are the ones that count now: compare every candidate of the group with them again, also the "
+                "ones ruled out before, and file each of them.")
+
     def file(self, kind: str, text: str, source: str, agent: str) -> str:
         """File a document an agent chose; the extraction runs in the background and reports back as news."""
         if kind not in SHAPES:
@@ -342,6 +395,7 @@ class CaseFile:
             if digest in self.filed:
                 continue
             self.filed.add(digest)
+            self.agents.add(agent)
             self.pending += 1
             self.pending_by_agent[agent] = self.pending_by_agent.get(agent, 0) + 1
             fresh += 1
@@ -462,6 +516,7 @@ class CaseFile:
                 blocks = [topic for topic in ("discount",) + TOPICS if row.get(topic)]
                 told.append(f"{row.get('subject')} from {row.get('sender')} at {row.get('timestamp')} about "
                             f"{row.get('tender_reference')}: {row.get('topic')} ({', '.join(blocks) or 'no usable data'})")
+        self._note_changed_requirements()
         self._bump()
         account = "; ".join(told)[:1500] if told else "nothing usable was found in it"
         if clashes:
@@ -641,7 +696,7 @@ class CaseFile:
 
         def ask(qid: str, text: str) -> None:
             if qid not in self.answers:
-                found.append((qid, text))
+                found.append((qid, text + self._changed_note(qid)))
 
         if not facts.positions:
             ask("positions", "The tender's bill of quantities: every position with its number, quantity, unit and "
@@ -792,7 +847,7 @@ class CaseFile:
                            "materials": self.materials,
                            "conditions": {key: list(rows.values()) for key, rows in self.conditions.items()},
                            "messages": list(self.messages.values()), "answers": self.answers, "mailbox": self.mailbox,
-                           "evidence": self.evidence, "conflicts": self.conflicts},
+                           "evidence": self.evidence, "conflicts": self.conflicts, "changed": self.changed},
                           ensure_ascii=False, default=str)
 
 

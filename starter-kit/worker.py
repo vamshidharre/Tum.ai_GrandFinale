@@ -41,6 +41,9 @@ Reading the page:
 - It is rendered as a screen reader would read it. "(described: ...)" and "(tooltip: ...)" hold text that only
   shows on hover, "[canvas: ...]" what a drawing says, "(in collapsed menu)" an entry of a menu that is closed
   (you can click it all the same), "->" where a link leads, "{data-...}" attributes of a control.
+- The websites can be in German, in English or in both. Read them as they are. Search with the words the website
+  and the task brief themselves use, and copy identifiers, references and subject lines exactly: never translate
+  them. A label says the same thing in either language; do not skip one because it is not in the language you expect.
 - A "LOCKED AREA" is disabled until you pass the check in front of it. A page can hold several checks, one per
   area, also inside embedded frames further down: after passing one, look for the next LOCKED AREA and its own
   controls. A check whose status already reads as unlocked is done; setting it again changes nothing.
