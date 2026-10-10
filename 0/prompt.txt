@@ -1,0 +1,9 @@
+Can you implement and keep it good comment and test the run?
+
+What do you say?
+because they told like this 
+
+"We've bumped the concurrent test runs allowed per team to 4 to aid with iteration speed and will keep adjusting as time goes on & capacity holds up - time to fill the 1TB of DDR5 on the runners ;)"
+
+So we can test multiple things and do it right?
+What do you say? but keep a good log information so that later we dont forget anything.
