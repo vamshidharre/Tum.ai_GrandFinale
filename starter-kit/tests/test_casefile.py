@@ -12,6 +12,14 @@ import llm  # noqa: E402
 
 
 class EvidenceProvenance(unittest.IsolatedAsyncioTestCase):
+    def test_evidence_based_mail_questions_cannot_be_completed_without_facts(self):
+        for question in ("mailbox", "discount", "index:IDX-TEST", "fx:FX-TEST", "condition_group:GROUP-TEST"):
+            facts = casefile.CaseFile("brief", {"tender_reference": "TEST-0005", "scenario_date": "2030-01-01"})
+            with self.subTest(question=question), patch.object(facts, "questions", return_value=[(question, "find evidence")]):
+                result = facts.answer(question, "complete", "found")
+                self.assertIn("closes by itself", result)
+                self.assertNotIn(question, facts.answers)
+
     def test_future_index_window_does_not_erase_rate_valid_on_scenario_date(self):
         facts = casefile.CaseFile("brief", {
             "tender_reference": "TEST-0003", "scenario_date": "2030-06-15",
