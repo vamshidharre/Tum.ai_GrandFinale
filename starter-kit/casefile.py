@@ -695,7 +695,10 @@ class CaseFile:
                 return "no material of that catalogue group is on file yet: search the group and file its materials first"
             if unknown:
                 return f"the technical data or status of {', '.join(unknown)} is not on file yet: file it before answering absent"
-        if status == "complete" and question.split(":")[0] in ("positions", "revision", "requirements", "reserve", "material", "data"):
+        if status == "complete" and question.split(":")[0] in (
+                "positions", "revision", "requirements", "reserve", "material", "data", "mailbox", "discount",
+                "index", "fx", "condition_group", "packaging_tariff", "delivery_commitment", "setup_pool",
+                "project_bonus"):
             return "this question closes by itself once the facts are on file; file the missing evidence instead"
         self.answers[question] = (status, note)
         self._bump()
