@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01XefKr7NnRRovFw88NANPss",
+  "agent_id": "ac40540b2d88b680f",
+  "subagent_type": "general-purpose",
+  "task_description": "Browser layer tests and fixtures",
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 242317,
+    "cache_read_tokens": 5525449,
+    "output_tokens": 67944,
+    "api_call_count": 30
+  },
+  "started_at": "2026-10-10T14:53:01.0375963+02:00",
+  "completed_at": "2026-10-11T01:28:34.3001892+02:00"
+}
