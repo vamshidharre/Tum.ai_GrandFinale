@@ -35,6 +35,21 @@ class EvidenceProvenance(unittest.IsolatedAsyncioTestCase):
         self.assertIn("IDX-TEST", rates)
         self.assertEqual(str(rates["IDX-TEST"]), "0.0025")
 
+    async def test_mailbox_only_page_is_retained_as_evidence(self):
+        facts = casefile.CaseFile("brief", {"tender_reference": "TEST-0004", "scenario_date": "2030-01-01"})
+        self.assertIn("mailbox", {qid for qid, _ in facts.questions()})
+
+        async def extracted(*args, **kwargs):
+            return {"mailbox_address": "sales@example.test", "messages": []}
+
+        with patch.object(llm, "chat_json", extracted):
+            await facts._extract("mail", "Logged-in account page", "https://mail.example/account", "mail", "account")
+
+        self.assertEqual(facts.mailbox, "sales@example.test")
+        self.assertNotIn("mailbox", {qid for qid, _ in facts.questions()})
+        self.assertEqual(len(facts.evidence), 1)
+        self.assertIn("mailbox address", facts.evidence[0]["summary"])
+
     async def test_successful_extraction_records_its_source_and_typed_result(self):
         facts = casefile.CaseFile("brief", {"tender_reference": "TEST-0001", "scenario_date": "2030-01-01"})
 

@@ -75,6 +75,8 @@ How to work
 - For mailbox questions, search relevant folders separately when mailbox search covers only the current folder;
   include the archive when looking for historical or latest records. If a query is too broad or returns nothing,
   refine the terms and try again. Open candidate messages and file the message itself, not only its hit row.
+- For the mailbox-address question, inspect the logged-in account identity shown by webmail, not an address copied
+  from a sender or recipient. File the page as mail and confirm the case file now shows the mailbox before finishing.
 - If the news says extraction failed or found no usable records, do not mark that question complete. Reopen the
   evidence page, check that it contains the records requested, and file it again with the right kind.
 - When no open question is left that your website can answer right now, finish with done, also when you need
