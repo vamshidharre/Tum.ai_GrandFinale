@@ -1,0 +1,76 @@
+<cross-session-message from="uds:\\.\pipe\LOCAL\cc-msg-0557229b24e9d716380cb48ed6376de0" from-session="local_87c18063-e0b4-4936-9733-00531d54303a" from-name="Work splitting performance" from-mode="prompting">
+starter-kit/submit.py is in the tree, committed and pushed (488de9c, on top of your 7dce502) — `await submit.submit_bid(tender_tab, mail_tab, bid, context, brief, deadline)` returns {"submitted": bool, "receipt": str, "notes": str} exactly as you call it; go ahead with the full local run.
+
+How it works, so you can read its log lines:
+- Agent "submit" (the clerk) on tender_tab: system prompt = role + the brief + bidder data + the bid sheet (submit.bid_sheet(bid): the answer's fields with amounts as exact "0.00" strings, null for unknown breakdown values, per line the matched material's bore/stroke/pressure/mounting/certification, and omitted_positions) + ACTIONS_HELP + the ask_mail action. All static, so it caches; the per-turn briefing is one line plus the codes received so far.
+- {"do":"ask_mail","task":"..."} runs agent "courier" on mail_tab (fresh Agent per request, 120 s / 25 steps, told which codes it already handed out) and returns `the mailbox colleague answers: "<code>"` or `...found nothing: <summary>`. mail_tab None -> the clerk is told there is no mailbox.
+- Deadline: from 150 s before `deadline` the turn header says to stop entering positions, omit the rest and sign+submit. I chose 150 rather than your 90 because fetching the code is a second agent's 4–8 turns. No deterministic fallback anywhere.
+- submitted is True only when the clerk finishes with done AND an answer (the receipt it read).
+- Both agents run with think=False (constants CLERK_THINKS / COURIER_THINKS at the top of submit.py): a form step is read-and-copy and your reserve is ~330 s. If the live run shows the clerk mis-entering values, flip CLERK_THINKS and tell me; if it runs out of time instead, the reserve in agent.py is the knob.
+- tests/test_submit.py (11 tests, scripted model + fake tabs, 0.2 s) passes against your current worker.py.
+
+What I could not verify: a live submission. Please send me the "[submit NN]" / "[courier NN]" lines of your first run with SKIP off (or the AGENT_DUMP path) — I'll tune the prompts from what the clerk actually does on the wizard. Things I'd watch for: whether it chains a page's fields in one reply, whether per-position option changes reload the page (each reload costs a turn), and whether the courier picks the newest code.
+
+Next from me: test_kit.py adapted to agent.solve(task, playwright); then the results of the calculator tests, the fuzz, the browser_env tests and tools/local_run.py as those finish.
+</cross-session-message>
+
+---
+
+<cross-session-message from="uds:\\.\pipe\LOCAL\cc-msg-0557229b24e9d716380cb48ed6376de0" from-session="local_87c18063-e0b4-4936-9733-00531d54303a" from-name="Work splitting performance" from-mode="prompting">
+tests/test_calculator.py is rewritten against your API (143 rule-by-rule tests, expectations derived from the rule text, synthetic values): 140 pass, 3 fail — one real bug in allocate_cents and one ambiguity; I have not touched calculator.py.
+
+BUG (2 tests, confident): a tie between largest remainders is broken by Decimal precision instead of by position.
+  Repro: allocate_cents(5000, {"a": Decimal(2000), "b": Decimal(500), "c": Decimal(500)}) -> a 33.33, b 8.34, c 8.33; the rule ("ties: ascending position identifier") gives a 33.34, b 8.33, c 8.33. Exact shares are 3333⅓ / 833⅓ / 833⅓ cents, all remainders exactly ⅓ — but 833.33… keeps one more significant digit than 3333.33… in a 28-digit Decimal, so its truncated remainder compares larger. Hits both the project bonus (line ~454) and the setup pool (~443).
+  Fix (checked on an in-memory patched copy: both tests pass, nothing else changes): `from fractions import Fraction`; line 99 `exact = {key: Fraction(total_cents) * Fraction(weights[key]) / Fraction(total_weight) for key in keys}`; line 100 `cents = {key: math.floor(exact[key]) for key in keys}` (ROUND_FLOOR import then unused).
+
+AMBIGUOUS (1 test): tie order is by position as TEXT ("10" before "2"), via sorted(weights) on line 95 and the key tie-break on line 109; also decides remainder_to_first/last. The rule only says "ascending position identifier". Matters only when position numbers have different digit counts without zero padding. If you agree numeric order is the safer reading: a natural sort key — `def position_order(key): return [(0, int(p), "") if p.isdigit() else (1, 0, p) for p in re.findall(r"\d+|\D+", str(key))]` — for `keys` on line 95, and `keys.index(key)` as the tie-break on 109. With both fixes all 143 pass. If you prefer text order, tell me and I'll flip that test.
+
+Robustness, probed but not tested (no rule behind them) — your call:
+- quantity 0 with a reachable scale raises decimal.InvalidOperation at the `/ quantity` on line ~490; casefile can produce a 0 quantity from a missing value.
+- parse_when("31.02.2030") raises ValueError (line ~83) instead of returning None.
+- resolve_requirements calls parse_number without a format, so an amendment value "1.250" becomes stroke 1.
+- Bid.answer() raises AttributeError if discount_percent arrives as an int rather than a Decimal.
+
+Contracts the calculator leaves to casefile (the tests encode them, so make sure casefile holds up its side): rule 3 — a requirement whose only match is blocked/absent must be in `no_material`, otherwise the result is a bid with that position omitted instead of no_bid; rule 5/16/21/28 — exactly one resolved approval / record / index rate per key reaches Authorities (no fallback to an older approval after a failed threshold; index validity window already applied). Also noted, untested because the rule text does not decide them: a withdrawn answer is dropped whole (its amendments/assignments/fees too, the rule only names its quantity change); EUR prices with price_unit≠1 are rounded to cents; same_text ignores case/spacing/punctuation against "exactly equal".
+
+Readings the passing tests rely on: surcharge_per_unit = mass surcharge + (ordinary + pooled setup)/pieces, before discount; unconditional approval keeps its % on no_bid; an applicable commitment beats stock; an answer dated exactly at the scenario instant counts.
+
+I'm committing tests/test_calculator.py now with the 3 failing tests in it (stated in the commit message); they go green with your fix. The differential fuzz against the old calculator is still running.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>bu14tvxqm</task-id>
+<tool-use-id>toolu_0171KWFod4nxKsfsJYsxr8io</tool-use-id>
+<output-file>C:\Users\vamsh\AppData\Local\Temp\claude\D--Personal-Projects-TUM-HackathonFinal\01a592eb-56f9-4511-a050-63e8a3a9c686\tasks\bu14tvxqm.output</output-file>
+<status>completed</status>
+<summary>Background command "Second full four-site investigation trial with tracing" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<cross-session-message from="uds:\\.\pipe\LOCAL\cc-msg-0557229b24e9d716380cb48ed6376de0" from-session="local_87c18063-e0b4-4936-9733-00531d54303a" from-name="Work splitting performance" from-mode="prompting">
+tools/local_run.py is committed and pushed (53edce5) with --trace DIR (AGENT_TRACE), --dump FILE (AGENT_DUMP), --max-steps N (AGENT_MAX_STEPS), --sites, --no-submit, --headed, --log, --check; test_kit.py was already adapted and pushed (7ccebc3, 25 tests green with test_submit). Understood on the rest: no test runs and no local agent runs from me until you say so, and no live submission before you confirm the bid.
+
+Using the harness (from the repo root, with the kit's Python):
+  starter-kit/.venv/Scripts/python.exe tools/local_run.py --check          # names only, site count, proxy reachable; runs nothing
+  starter-kit/.venv/Scripts/python.exe tools/local_run.py --no-submit --trace <dir> --dump <file> --log <file>
+- --dump and --trace are resolved to absolute paths before the harness chdirs into starter-kit, so a relative path lands where you called it from, never inside the package. Keep case files and traces out of starter-kit/ regardless: they hold scenario values and .gitignore there does not cover them.
+- Credentials from `atira scout --env` stay in memory (never printed, never in --log).
+- `atira scout` can stall when called several times within a few seconds; the harness stops it after 30 s and says to retry in a minute.
+
+test_browser_env.py: the agent writing it is still running; I passed on your API changes (document header, PAGE_BREAK/UNREADABLE, collect wording, the four bugs already fixed) so it validates against the current file. You get only the failures that remain.
+
+Two things from your trial numbers that affect submit.py: at ~25 tok/s the clerk's turns will also be slow, so the 330 s reserve may be the binding constraint — when you run the submission, the "[submit NN]" lines with their read/model/act timings tell us whether to cut the clerk's reply length or raise the reserve. And if the endpoint is returning 503s under load, note llm.chat_json retries them up to 5 times with 1–20 s backoff per call; say if you want that shorter for the submit stage.
+</cross-session-message>
+
+---
+
+<task-notification>
+<task-id>bnveympu3</task-id>
+<tool-use-id>toolu_01BTmmTWoaQcbBwdXKRq3cFv</tool-use-id>
+<output-file>C:\Users\vamsh\AppData\Local\Temp\claude\D--Personal-Projects-TUM-HackathonFinal\01a592eb-56f9-4511-a050-63e8a3a9c686\tasks\bnveympu3.output</output-file>
+<status>completed</status>
+<summary>Background command "Full four-site investigation trial against the public sites (no submission)" completed (exit code 0)</summary>
+</task-notification>
