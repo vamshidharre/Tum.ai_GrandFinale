@@ -1,0 +1,32 @@
+Can you get to know about this project first?
+
+---
+
+Can you tell me which code file belongs to which one?
+
+
+
+QuoteCraft is an agentic solution for Atira’s “RFQ to Bid” challenge:
+
+- Four model-directed browser agents investigate the tender portal, supplier portal, ERP, and mail in parallel.
+- Relevant pages become typed evidence in a shared case file.
+- A deterministic `Decimal` calculator applies the commercial rules.
+- A final agent completes the bid form, retrieves the TAN from mail, and submits.
+
+---
+
+in the repo can you check the maria4065 branch?
+
+---
+
+check mari/build
+
+---
+
+[https://github.com/vamshidharre/Tum.ai_GrandFinale](https://github.com/vamshidharre/Tum.ai_GrandFinale)
+
+---
+
+alright now with the code we have, can you update and merge and also
+
+check in this there are some checks got broken. can you fix them?
