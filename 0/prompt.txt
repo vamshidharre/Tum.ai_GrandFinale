@@ -1,0 +1,66 @@
+My priority order would be:
+
+1. Add a live-form pre-submit checklist/report.
+2. Test recovery on synthetic portal variants: renamed fields, reordered steps, validation errors, delayed TAN, interrupted session.
+3. Preserve source/provenance alongside extracted facts, so the agent can resolve contradictions defensibly.
+4. Add OCR only if observed inputs require it.
+
+So: excellent strategic memo; it validates the architecture we chose, but it also points directly to the highest-value next improvement—submission eligibility validation.
+
+
+
+
+
+go ahead
+
+---
+
+### Test run
+
+Runs your agent system in the sandbox on the public scenario, exactly as a scored run would, but never ranked. Easiest from your terminal, in your agent folder: `atira test-run .` uploads it, starts the run and opens it live.
+
+
+
+Can you tell me in which path can I run this ?
+
+---
+
+D:\Personal_Projects\TUM_HackathonFinal\starter-kit>atira test-run
+atira: Usage: atira test-run <dir> [--challenge <id>] [--dry-run] [--follow] [--no-open]
+
+D:\Personal_Projects\TUM_HackathonFinal\starter-kit>
+
+---
+
+how to see it in their website?
+
+---
+
+so as far I understood we are scrapping the website right?
+
+---
+
+what strategy are we using?
+
+---
+
+# Files pasted by the user:
+
+## "Winning Strategy for Autonomous RFQ Extraction and Navigation on Unseen Web Env…": C:\Users\vamsh\.codex/attachments/f7ca0f04-7802-40c4-85a2-78dc14c0b825/Pasted text.txt
+
+## My request:
+what do you think about this following information, tell me in short 
+
+""
+
+---
+
+Can you implement and keep it good comment and test the run?
+
+What do you say?
+because they told like this 
+
+"We've bumped the concurrent test runs allowed per team to 4 to aid with iteration speed and will keep adjusting as time goes on & capacity holds up - time to fill the 1TB of DDR5 on the runners ;)"
+
+So we can test multiple things and do it right?
+What do you say? but keep a good log information so that later we dont forget anything.
