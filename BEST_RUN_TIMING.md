@@ -143,4 +143,46 @@ Expected: mail ~15-20 turns instead of 50 → investigation ~150-200 s, cost abo
 
 | Run | Package | Quality | Time | Cost | Notes |
 |---|---|---|---|---|---|
-| (to fill) | round 7 | | | | |
+| run_ddfa36f5 (SCORED) | **round 7** (3b3832a3) | **100** | **5:10** | **$0.138** | investigation 200 s / $0.119 (was 280 s / $0.148). Mail 27 turns / 314k (was 50 / 607k), done 2:35 (was 4:40). ERP is now the critical path: 38 turns, done 3:19. Bid 109 s |
+
+## 10. Where the 5:10 of run_ddfa36f5 (round 7) goes
+
+| Phase | Run clock | Time | Turns | Notes |
+|---|---|---|---|---|
+| Brief read (context) | 0:00-0:04 | 4 s | 1 | |
+| Investigation, 4 agents in parallel | 0:04-3:20 | 197 s | 89 + 55 extractions | ends when the ERP ends |
+| Bid form (clerk) | 3:20-4:51 | 91 s | 15 | |
+| TAN from the mailbox (courier) | 4:51-5:05 | 14 s | 5 | robot checks stay with the model |
+| Enter TAN + submit | 5:05-5:10 | 4 s | 1 | |
+
+| Agent | Turns | Working | Idle | Input tokens |
+|---|---|---|---|---|
+| tender-portal | 11 | 0:04-0:48 | - | 111k |
+| customer-portal | 13 | 0:04-0:54 (requirements filed 0:42) | - | 118k |
+| mail | 27 | 0:04-2:35 | 0:16-0:42 (no questions yet), 1:57-2:16 | 314k |
+| **ERP (critical path)** | 38 | 0:04-3:19 | 0:13-0:42 waiting for requirements | 378k |
+
+ERP critical path:
+
+| Stretch | Time | Turns | Waste |
+|---|---|---|---|
+| Login + access check | 9 s | 2 | - |
+| Idle until the requirements (catalogue groups) are read | 30 s | 0 | dependency; could learn the record layout meanwhile |
+| Finding the material search (F4 link dead, then goto) | 11 s | 4 | ~7 s |
+| First records by hand: HZ-8405 (blocked) + one record ALL the way | 43 s | 14 | needed once |
+| **A second record walked fully by hand, then filed AGAIN with file_each** | 45 s | 11 | **~35 s** |
+| 3 searches + 3 file_each (5 records) | 68 s | 6 | file_each browser time 44 s (~9 s per record) |
+
+Bid phase:
+
+| Step | Time | Turns | Waste |
+|---|---|---|---|
+| Reach the bid form | 11 s | 2 | ~5 s |
+| Bidder data + offer type | 6 s | 2 | - |
+| **First position by hand** | 31 s | 6 | **~20 s** (round 6 did it in 2 turns) |
+| 4 positions with enter_positions | 32 s | 1 | browser time 30 s (~7.4 s per position) |
+| Conditions, declarations, check, TAN request | 11 s | 4 | - |
+| Courier gets the TAN | 14 s | 5 | - |
+| TAN + submit | 4 s | 1 | - |
+
+Next candidates (round 8), in order: ERP second by-hand record (~35 s), ERP idle wait (~30 s), clerk first position (~20 s), browser waits in file_each/enter_positions (part of ~75 s).
