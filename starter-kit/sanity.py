@@ -33,6 +33,10 @@ REGISTRY: dict[str, Check] = {check.name: check for check in (
           "an unknown mailbox address filled in by guessing: the clerk asks the mailbox colleague instead", True),
     Check("coverage_gate", "before an agent closes a question",
           "a question closed as absent after one search, or closed over a list that stopped at its page limit", True),
+    Check("done_gate", "before an investigator finishes",
+          "an agent that says done while a question it filed evidence for is still open (run dafda06b: requirements "
+          "read in the agent's thoughts but never filed): it is told what is still missing, at most twice per question",
+          True),
     Check("agent_restart", "an investigator that stops unfinished",
           "an agent that ended at its step limit or in a loop while its questions are still open: one fresh restart "
           "(new tab, new conversation) while at least 2 minutes of investigation remain", True),

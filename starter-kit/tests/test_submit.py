@@ -305,6 +305,15 @@ class EnteringTheBid(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([step for step in tender.done if step == ("click", 21)], [("click", 21)] * 2)
         self.assertIn("has its values on the bid sheet", script.turns("submit")[5]["user"])
 
+    async def test_when_turns_run_out_the_clerk_is_told_to_sign_and_may_leave_positions_out(self):
+        # run 15a3aaf9: a four-step cycle on one position ran the clerk into its step cap, unsigned
+        with patch.object(submit, "CLERK_STEPS", 30), patch.object(submit, "TURNS_RESERVE", 26):
+            tender, script = await self.omitting(900, self.one_after_another())
+        users = [turn["user"] for turn in script.turns("submit")]
+        self.assertNotIn("TURNS ARE RUNNING OUT", users[0])
+        self.assertTrue(any("YOUR TURNS ARE RUNNING OUT" in user for user in users[4:]))
+        self.assertEqual(len([step for step in tender.done if step == ("click", 21)]), 3)  # the cap no longer holds
+
     async def test_a_form_position_that_is_not_on_the_bid_sheet_may_always_be_left_out(self):
         # run 9ac58b69: the form held an extra position the bid does not have; leaving it out is right
         tender, script = await self.omitting(900, self.one_after_another(), position="EXTRA-9")

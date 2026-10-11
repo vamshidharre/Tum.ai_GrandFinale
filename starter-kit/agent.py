@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import time
+from urllib.parse import unquote_plus, urljoin
 
 from playwright.async_api import async_playwright
 
@@ -26,8 +27,9 @@ from browser_env import Tab
 from calculator import calculate_bid
 import sanity
 import validate
-from casefile import SHAPES, CaseFile, read_context
-from worker import ACTIONS_HELP, CONTROL, Agent, find_control
+from casefile import SHAPES, CaseFile, brief_intro, brief_rules, read_context, status_sections
+from gates import Gates
+from worker import ACTIONS_HELP, ACTIONS_HELP_RESEARCH, CONTROL, Agent, brief_for, find_control
 
 RESTART_MIN_SECONDS = 120  # an unfinished agent is restarted only while this much investigation time is left
 
@@ -36,9 +38,7 @@ engineering team. Each agent works a different website at the same time; you wor
 in your own browser tab. Together you must find every fact the bid rules need. You only find and file evidence:
 you never calculate prices.
 
-TASK BRIEF (the rules are authoritative)
 {brief}
-END OF BRIEF
 
 {actions}
 Case-file actions:
@@ -46,20 +46,25 @@ Case-file actions:
       File the document in front of you (the current page, or the document you just collected or fetched) as
       evidence. Its facts are then extracted into the shared case file and reported back to you. Kinds:
         positions         the tender's bill of quantities
-        clarifications    answers of the tender's bidder Q&A
+        clarifications    answers of the tender's bidder Q&A, and change or amendment notices to the tender
         revisions         the revision history of the buyer's technical specification
         requirements      the requirement details of one specification revision
         material          ERP master data of materials: technical attributes, status, planning, stock
         price_conditions  ERP price conditions of one material: validity, currency, quantity scales
-        mail              an opened mail message
+        mail              an opened mail message, or a register of approvals/releases (one record per row)
   {{"do": "file_each", "links": [12, 15, 18], "kind": "<kind>", "tabs": [{{"tab": "<tab label>", "kind": "<kind>"}}]}}
-      Open each record you name from the list in front of you (up to 12 links by id) and file it with keep as
-      "kind"; "tabs" (optional) also opens and files those tabs of every record, each with its own kind. A tab can
-      also be a path of controls clicked in order, the page at its end being filed:
-      {{"path": ["<label 1>", "<label 2>", "<label 3>"], "kind": "<kind>"}} (labels or a part of them, as the
-      record page shows them). You come back to the list with a report of what was filed. Use it when a result list
-      holds several records you need: walk the first record yourself to learn which tabs and paths hold its facts,
-      then file the others with one file_each giving the same tabs and paths.
+      Files several records of the list in front of you in ONE turn (up to 12 links by id): each record is opened
+      and filed as "kind"; "tabs" also opens each named tab of every record, or follows a path of controls clicked
+      in order ({{"path": ["<label 1>", "<label 2>"], "kind": "<kind>"}}, labels or a part of them as the record
+      shows them), and files the page there with its own kind; "keep_record": false skips filing the record's first
+      page. You come back to the list with a report. A record walked by hand costs about ten turns; walk only the
+      FIRST one by hand to learn where its facts are, then file the others with file_each. Example: from a list you
+      opened [12] "Item Q-71", kept its "Specs" tab as material, clicked "Stock" > "Site North" > "Bin 4" and kept
+      that page as material, clicked "Prices" > "Scales" and kept that page as price_conditions. Then, for [15] and
+      [18] of a list, one turn: {{"do": "file_each", "links": [15, 18], "kind": "material", "keep_record": false,
+      "tabs": [{{"tab": "Specs", "kind": "material"}}, {{"path": ["Stock", "Site North", "Bin 4"], "kind": "material"}},
+      {{"path": ["Prices", "Scales"], "kind": "price_conditions"}}]}}. Once you have walked a record, your briefing
+      shows this action ready, with the tabs and paths you used.
   {{"do": "answer", "question": "<id>", "status": "complete" | "absent", "note": "..."}}
       Close an open question: "complete" when all its evidence is filed (needed for lists that only you know to be
       complete), "absent" when you searched properly and what is asked for does not exist.
@@ -82,9 +87,10 @@ How to work
   references, senders and status marks before you rely on a record, and follow the brief's rules on which one
   counts. When in doubt, file both and let the facts decide.
 - Do not reject a candidate record yourself (for example a material whose stroke seems to differ): file every
-  candidate the question names, with file_each when a list shows several of them (after you have seen one record
-  and know which of its tabs hold the facts), else with keep. The case file matches them against the requirement values, which can still
-  change when amendments or reserves are filed.
+  candidate the question names, with file_each once you have walked one record and know which of its tabs and
+  paths hold the facts (also for a list with a single record you need), else with keep. The case file matches them
+  against the requirement values, which can still change when amendments or reserves are filed.
+- Navigation you can already name (a menu, then a tab, then a link) takes ONE turn with path, not a turn per click.
 - Follow the search hints a website gives. If a search returns nothing or too much, change the search terms.
 - When a question asks for every item in a list, inspect its page controls and use collect on the control that
   advances that list before filing it. Check the resulting page count or end state; do not mark a list complete after
@@ -98,6 +104,48 @@ How to work
   facts the other agents have not filed yet. You are called again as soon as the case file brings new questions.
   Never idle with wait and never browse around to pass the time.
 """
+
+
+def _bullet(text: str, start: str) -> str:
+    """The bullet of `text` that begins with `start`, with its indented continuation lines."""
+    begin = text.find("- " + start)
+    if begin < 0:
+        return ""
+    end = re.search(r"\n(?! )", text[begin:])
+    return text[begin:begin + end.start()] if end else text[begin:]
+
+
+# The trap guidance is shown from gate 1 on (gates.py), not in every call; the escalated turn has the full prompt.
+TRAP_GUIDANCE = _bullet(INVESTIGATOR, "The websites hold traps")
+INVESTIGATOR_LEAN = INVESTIGATOR.replace(TRAP_GUIDANCE + "\n", "") if TRAP_GUIDANCE else INVESTIGATOR
+FULL_BRIEF = "TASK BRIEF (the rules are authoritative)\n{brief}\nEND OF BRIEF"
+INVESTIGATOR_DROP = ("submission", "abgabe", "einreichung")  # sections of the brief no investigator needs
+# Which case-file sections a website's role concerns (the role comes from the context, SITE_ROLES), shown from gate 1
+# on next to the sections of the agent's own questions.
+ROLE_SECTIONS = {"erp": {"requirements", "materials"}, "mail": {"authorities"}}
+# A news item that says an extraction brought nothing usable: trouble (gates.py).
+BAD_NEWS = re.compile(r"(?i)extraction failed|no usable records|nothing usable|schema validation rejected")
+
+# A soft budget for the run's input tokens (llm.STATS["prompt_tokens"]). From BUDGET_NEAR of it on, investigators are
+# told to file what they have and finish; from all of it on, an investigator whose documents are not being read
+# finishes before its next model call. The bid clerk and the courier are exempt: a signed bid must still happen.
+# TOKEN_BUDGET=0 turns it off.
+BUDGET_NEAR = 0.9
+BUDGET_LINE = "TOKEN BUDGET NEARLY USED: file what you have, answer your questions, finish with done (no new searches)."
+BUDGET_LOGGED: set[str] = set()  # "near" once logged
+
+
+def token_budget() -> int:
+    try:
+        return int(os.environ.get("TOKEN_BUDGET", "1100000"))
+    except ValueError:
+        return 1_100_000
+
+
+def budget_used() -> float:
+    """The share of the run's input-token budget used so far (0 without a budget)."""
+    budget = token_budget()
+    return llm.STATS.get("prompt_tokens", 0) / budget if budget > 0 else 0.0
 
 
 class Team:
@@ -160,6 +208,14 @@ class Team:
         return hold
 
 
+# Which kinds of evidence answer which open question (by the part of its id before ":"): an agent that filed one of
+# these kinds works on that question, and is not let go while it is open (before_done in `investigator`).
+QUESTION_KINDS = {"positions": ("positions",), "revision": ("revisions",), "requirements": ("requirements",),
+                  "clarifications": ("clarifications",), "material": ("material",),
+                  "data": ("material", "price_conditions")}
+DONE_REFUSALS = 2  # refused dones per question and agent
+DONE_GATE_SECONDS = 90  # investigation time that must be left for a done to be refused
+
 FILE_EACH_LIMIT = 12  # records per file_each action
 FILE_EACH_SECONDS = 150  # and seconds for all of them; the agent continues from the list afterwards
 
@@ -171,6 +227,9 @@ async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "
     one model turn per page opened (the ERP agent needed 58-85 turns per run, each resending its whole prompt)."""
     kind = str(action.get("kind") or "")
     tabs = [t for t in (action.get("tabs") or []) if isinstance(t, dict) and (t.get("tab") or t.get("path"))]
+    # "keep_record": false leaves the record's first page unfiled when only its tabs hold facts (one extraction less
+    # per record); without tabs the record page is filed all the same, or nothing would be.
+    keep_record = not tabs or str(action.get("keep_record", True)).strip().lower() not in ("false", "0", "no")
     links = [str(i).strip("[] ") for i in (action.get("links") or [])][:FILE_EACH_LIMIT]
     if not links or not kind:
         return 'file_each needs "links" (ids of the records on this page) and "kind"'
@@ -206,7 +265,7 @@ async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "
         if tab.page.url == home:  # nothing opened (a control that filters or sorts the list): nothing to file
             report.append(f'[{aid}] "{label}" did not open a record ({opened[:60]})')
             continue
-        filed = [f"{kind}: {file(kind, tab.document, tab.document_source)[:120]}"]
+        filed = [f"{kind}: {file(kind, tab.document, tab.document_source)[:120]}"] if keep_record else []
         record_url = tab.page.url
         for extra in tabs:
             # A tab, or a path of controls clicked one after another (a stock overview, then a plant, then a
@@ -239,14 +298,195 @@ async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "
     return f"file_each opened {len(links)} record(s) and is back on the list:\n" + "\n".join(report)
 
 
+ID_PART = re.compile(r"[^\s·•|,;:()\[\]/<>\"']+")
+
+
+def id_tokens(label: str) -> list[str]:
+    """The parts of a control's label that look like a record's number: three characters or more, with a digit."""
+    return [part.strip(".-_") for part in ID_PART.findall(label)
+            if len(part.strip(".-_")) >= 3 and any(ch.isdigit() for ch in part)]
+
+
+def id_shape(token: str) -> str:
+    """A number's pattern (digits as 0, letters as A): records of one list share it, menu codes rarely do."""
+    return re.sub(r"[^\W\d_]", "A", re.sub(r"\d", "0", token))
+
+
+def _address(url: str) -> str:
+    return unquote_plus(url or "").casefold()
+
+
+def _url_of(page: str) -> str:
+    return page.split("\n", 1)[0].removeprefix("url: ").strip() if page.startswith("url: ") else ""
+
+
+class WalkRecorder:
+    """Learns how the model walked one record by hand, so that the briefing can offer the same walk for the other
+    records of a list as one file_each action. Code only replays what the model did; which records to file stays the
+    model's choice (it names the links). Sandbox runs 4876a0ad and others: the ERP agent spent ~12 turns per material
+    (record, technical tab, keep, planning tab, keep, stock overview, plant, storage location, keep, prices, scales,
+    keep) and never used file_each.
+
+    A walk starts when a link whose label carries a number opens a page whose address carries that number (a record
+    opened from a list). Every click after it is noted by its control's label; a keep closes a segment: the clicks
+    since the last keep become a path filed with the keep's kind. A form entry, a collected document or an address
+    typed by hand cannot be replayed and ends the recording (what was learned stays)."""
+
+    def __init__(self):
+        self.walk: dict | None = None
+        self.learned: dict | None = None  # {"label", "shape", "kind", "keep_record", "tabs", "score"}
+
+    # events -----------------------------------------------------------------------------------------------------
+    def browsed(self, action: dict, page_before: str, url_after: str) -> None:
+        do = action.get("do")
+        url_before = _url_of(page_before)
+        if do == "click":
+            aid = str(action.get("id", "")).strip("[] ")
+            label = next((m.group(3) for m in CONTROL.finditer(page_before) if m.group(1) == aid), None)
+            kind = next((m.group(2) for m in CONTROL.finditer(page_before) if m.group(1) == aid), "")
+            self._clicked(label, kind, page_before, url_before, url_after)
+        elif do == "goto":
+            # an address the model took from a link on the page counts as a click on that link
+            target = urljoin(url_before, str(action.get("url", ""))).rstrip("/")
+            link = next((m for m in CONTROL.finditer(page_before)
+                         if (href := re.search(r"->\s*(\S+)", m.group(4)))
+                         and urljoin(url_before, href.group(1)).rstrip("/") == target), None)
+            if link is not None:
+                self._clicked(link.group(3), link.group(2), page_before, url_before, url_after)
+            elif self.walk:
+                self.walk["over"] = True
+        elif do == "back":
+            if self.walk and self.walk["pending"]:
+                self.walk["pending"].pop()
+                if not self.walk["pending"]:
+                    self.walk["start"], self.walk["unusable"] = "", False
+        elif do in ("fill", "select", "set", "collect", "fetch", "steps") and self.walk:
+            self.walk["over"] = True
+
+    def _clicked(self, label: str | None, kind: str, page_before: str, url_before: str, url_after: str) -> None:
+        walk = self.walk
+        tokens = [t for t in id_tokens(label or "") if t.casefold() in _address(url_after)
+                  and t.casefold() not in _address(url_before)] if kind in ("link", "clickable") else []
+        # inside a record already being walked (its number in the address), a numbered control is part of the walk
+        inside = bool(walk and walk["keeps"] and not walk["over"]
+                      and any(t.casefold() in _address(url_before) for t in walk["tokens"]))
+        if tokens and not inside and url_after != url_before:
+            self.walk = {"label": label, "tokens": tokens, "shape": id_shape(tokens[0]), "pending": [], "start": "",
+                         "unusable": False, "segments": [], "main": None, "keeps": 0, "over": False}
+            return
+        if not walk or walk["over"]:
+            return
+        if label is None:
+            walk["unusable"] = True
+            return
+        step = self._generic(label)
+        if step is None:
+            walk["unusable"] = True
+            return
+        if not walk["pending"]:
+            walk["start"] = page_before
+        walk["pending"].append(step)
+
+    def _generic(self, label: str) -> str | None:
+        """A label without the walked record's own number (that differs from record to record), or None when
+        nothing generic is left to find the control by."""
+        text = label
+        for token in self.walk["tokens"]:
+            text = re.sub(re.escape(token), " ", text, flags=re.IGNORECASE)
+        if text == label:
+            return label.strip() or None
+        text = " ".join(text.split()).strip(" ·•|-:,;")
+        return text if sum(ch.isalpha() for ch in text) >= 3 else None
+
+    def kept(self, kind: str, held: bool) -> None:
+        walk = self.walk
+        if not walk or walk["over"]:
+            return
+        if held:  # a collected or fetched document: no path of clicks leads to it
+            walk["over"] = True
+            return
+        walk["keeps"] += 1
+        if not walk["pending"] and not walk["segments"] and walk["main"] is None and not walk["unusable"]:
+            walk["main"] = kind
+        elif walk["pending"] and not walk["unusable"]:
+            path = self._shortest(walk["pending"], walk["start"])
+            segment = {"tab": path[0], "kind": kind} if len(path) == 1 else {"path": path, "kind": kind}
+            if len(path) <= 6 and segment not in walk["segments"]:
+                walk["segments"].append(segment)
+        walk["pending"], walk["start"], walk["unusable"] = [], "", False
+        score = len(walk["segments"]) + (walk["main"] is not None)
+        if score and (self.learned is None or score >= self.learned["score"] or self.learned["label"] == walk["label"]):
+            self.learned = {"label": walk["label"], "shape": walk["shape"], "tokens": walk["tokens"],
+                            "kind": walk["main"] or walk["segments"][0]["kind"], "keep_record": walk["main"] is not None,
+                            "tabs": list(walk["segments"]), "score": score}
+
+    @staticmethod
+    def _shortest(path: list[str], start: str) -> list[str]:
+        """The path from its last step that was already on the page where it began: a detour through a tab that
+        held nothing (opened, then the next tab clicked from there) is not repeated for every record."""
+        for index in range(len(path) - 1, 0, -1):
+            if find_control(start, path[index], ("link", "button", "clickable"))[0] is not None:
+                return path[index:]
+        return path
+
+    # the offer --------------------------------------------------------------------------------------------------
+    def tip(self, page: str) -> str:
+        """The learned walk as a ready file_each action, when the page in front of the agent lists records like the
+        one it walked (links whose numbers have the same pattern) and is not that record itself."""
+        learned = self.learned
+        if not learned or not page:
+            return ""
+        address = _address(_url_of(page))
+        if any(t.casefold() in address for t in learned["tokens"]):
+            return ""
+        records = [m for m in CONTROL.finditer(page) if m.group(2) in ("link", "clickable")
+                   and any(id_shape(t) == learned["shape"] and t.casefold() not in address for t in id_tokens(m.group(3)))]
+        if not records:
+            return ""
+        action = {"do": "file_each", "links": ["<ids>"], "kind": learned["kind"]}
+        if learned["tabs"]:
+            if not learned["keep_record"]:
+                action["keep_record"] = False
+            action["tabs"] = learned["tabs"]
+        spec = json.dumps(action, ensure_ascii=False).replace('["<ids>"]', "[<ids of the records you need>]")
+        return (f'TIP: you walked the record "{learned["label"]}" by hand. File the other records you need from this '
+                f"list in ONE turn, with the same tabs and paths:\n{spec}")
+
+
 def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent:
     name = tab.site_id
-    system = INVESTIGATOR.format(site=name, url=tab.base_url, brief=case.brief, actions=ACTIONS_HELP)
+    gates = Gates()
+    full_system = INVESTIGATOR.format(site=name, url=tab.base_url, actions=ACTIONS_HELP_RESEARCH,
+                                      brief=FULL_BRIEF.format(brief=brief_for(case.brief, drop_sections=INVESTIGATOR_DROP)))
+    # The task card instead of the whole brief (gates on): what the model read from the brief at the start, and the
+    # brief's own task paragraph. Without a card (the context has no tender reference) the whole brief, as before.
+    card = ""
+    if isinstance(case, CaseFile):
+        card = case.task_card(brief_intro(brief_for(case.brief)), {role: site for role, site in SITE_ROLES.items() if site},
+                              mail=site_role(name) == "mail")
+    rules_brief = brief_for(case.brief, drop_sections=INVESTIGATOR_DROP + ("access", "zugang"))
+    system = full_system if gates.full() else INVESTIGATOR_LEAN.format(
+        site=name, url=tab.base_url, actions=ACTIONS_HELP_RESEARCH,
+        brief=card or FULL_BRIEF.format(brief=brief_for(case.brief, drop_sections=INVESTIGATOR_DROP)))
 
-    def briefing() -> str:
+    def case_view(sections: set[str] | None) -> str:
+        return case.status(sections) if isinstance(case, CaseFile) else case.status()
+
+    def briefing(full: bool = False) -> str:
         questions = questions_for_site(name, case.questions())
         news = case.take_news(name)
-        text = f"CASE FILE\n{case.status()}\n\nOPEN QUESTIONS\n"
+        if any(BAD_NEWS.search(item) for item in news):
+            gates.trouble("an extraction found nothing")
+        gate = 2 if full or gates.full() else gates.gate
+        ids = [qid for qid, _ in questions]
+        sections = (None if gate >= 2 else set() if gate == 0
+                    else status_sections(ids, filed_kinds) | ROLE_SECTIONS.get(site_role(name) or "", set()))
+        text = f"CASE FILE\n{case_view(sections)}\n\nOPEN QUESTIONS\n"
+        # The mailbox agent sees every record it still needs at once, with the brief's subject word and sender,
+        # so that it can plan its searches (sandbox runs 9ac58b69, 472732d2, 63f3be2e: 25-46 turns of guessing).
+        checklist = case.mail_checklist(questions) if site_role(name) == "mail" else ""
+        if checklist:
+            text += checklist + "\n\n"
         text += "\n".join(f"- [{qid}] {question}" for qid, question in questions) or "(none)"
         if news:
             text += "\n\nNEWS FROM YOUR FILED DOCUMENTS\n" + "\n".join(f"- {item}" for item in news)
@@ -255,20 +495,77 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
             text += f"\n\n({own_pending} filed document(s) are still being read.)"
         elif case.pending:
             text += f"\n\n({case.pending} document(s) filed by other agents are still being read.)"
+        tip = walks.tip(agent.page_seen) if questions else ""
+        if tip:
+            text += "\n\n" + tip
+        if gate == 1:  # trouble: what helps to judge a record, and the brief's rules on these questions
+            if TRAP_GUIDANCE:
+                text += "\n\nWHEN YOU CHECK A RECORD\n" + TRAP_GUIDANCE[2:]
+            rules = brief_rules(rules_brief, ids) if ids else ""
+            if rules:
+                text += "\n\nTHE BRIEF'S RULES ON YOUR QUESTIONS\n" + rules
+        if budget_used() >= BUDGET_NEAR:
+            text += "\n\n" + BUDGET_LINE
+            if "near" not in BUDGET_LOGGED:
+                BUDGET_LOGGED.add("near")
+                print(f"[{name}] token budget: {llm.STATS.get('prompt_tokens', 0)} of {token_budget()} input tokens "
+                      "used; investigators are told to finish", flush=True)
         return text
 
     agent: Agent
+    walks = WALKS.setdefault(name, WalkRecorder())  # what was learned outlives a restart; the walk in progress not
+    walks.walk = None
+
+    filed_kinds: set[str] = set()  # kinds of evidence this agent filed: the questions it works on (before_done)
+    refused: dict[str, int] = {}  # question -> times a done was refused over it
+
+    def filing(kind: str, text: str, source: str) -> str:
+        res = case.file(kind, text, source, name)
+        if res.startswith("filed"):
+            filed_kinds.add(kind)
+        return res
 
     async def keep(action: dict) -> str:
         document, source = agent.document()
-        res = case.file(str(action.get("kind", "")), document, source, name)
+        kind = str(action.get("kind", ""))
+        pages = [] if agent.held else agent.trail_pages()
+        paged = len(pages)
+        res = filing(kind, document, source)
+        if not res.startswith("filed"):
+            gates.trouble("a keep was refused")
+        if kind in SHAPES:
+            walks.kept(kind, agent.held is not None)
         if res.startswith("this document is already filed"):
             res += "; do not file this same page again — check OPEN QUESTIONS for what is missing on another page, or finish with done"
+        if res.startswith(("filed", "this document is already filed")):
+            agent.forget_trail(filed=pages or [agent.tab.document])
+            if paged > 1:
+                res = (f"you paged through this document in place, so the {paged} pages you read of it since your last "
+                       "keep were filed together: " + res)
         return res
 
     async def file_each_action(action: dict) -> str:
-        return await file_each(tab, action, lambda kind, text, source: case.file(kind, text, source, name),
-                               agent.coverage.saw, deadline, agent.page_seen)
+        return await file_each(tab, action, filing, agent.coverage.saw, deadline, agent.page_seen)
+
+    async def before_done(action: dict) -> str | None:
+        """A done while a question this agent filed evidence for is still open: the agent is told what is missing
+        instead of going idle (sandbox run dafda06b: the customer-portal agent read 4 requirements in its thoughts,
+        filed one page, and finished; the requirements question stayed open and nobody came back to it). At most
+        DONE_REFUSALS times per question, never while its own documents are being read or near the deadline."""
+        if not sanity.enabled("done_gate") or case.pending_for(name) or deadline - time.time() < DONE_GATE_SECONDS:
+            return None
+        mine = [(qid, text) for qid, text in questions_for_site(name, case.questions())
+                if filed_kinds & set(QUESTION_KINDS.get(qid.split(":", 1)[0], ())) and refused.get(qid, 0) < DONE_REFUSALS]
+        if not mine:
+            return None
+        for qid, _ in mine:
+            refused[qid] = refused.get(qid, 0) + 1
+        return ("not finished: you filed evidence for these questions and they are still open:\n"
+                + "\n".join(f"- [{qid}] {text}" for qid, text in mine)
+                + "\nThe case file does not have what they name yet. If you read it on pages you did not file, go back "
+                  "to them and file them: a paged document with collect on its next-page control, or page through it "
+                  "and keep (every page of it you read since your last keep is filed with it). If it is on another "
+                  "website, or does not exist, answer it absent where the question allows that, or say so with done again.")
 
     async def answer(action: dict) -> str:
         # A completion action can arrive in the same turn as `keep`. Wait for this agent's own
@@ -285,6 +582,7 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
     # Navigation runs without the model's thinking: about twice as fast. The facts themselves are read by the
     # extraction calls in casefile.py, which keep thinking on. AGENT_THINK=1 turns it back on for comparison.
     agent = Agent(name, tab, system, briefing, extra={"keep": keep, "file_each": file_each_action, "answer": answer}, deadline=deadline,
+                  before_done=before_done,
                   max_steps=int(os.environ.get("AGENT_MAX_STEPS", "150")), idle=team.hook(name),
                   think=os.environ.get("AGENT_THINK") == "1",
                   circle_hint="You are going in circles: the same thought keeps coming back without progress. If a "
@@ -294,6 +592,18 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
                               "not to match: the case file does the matching, and requirement values can still change "
                               "when amendments or reserves are filed. If you need facts the other agents have not "
                               "filed yet, finish with done; you are called again when the case file has news.")
+
+    async def note_walk(action: dict, page_before: str, result: str) -> None:
+        walks.browsed(action, page_before, tab.page.url)
+        return None
+
+    agent.on_action = note_walk
+    gates.log = agent.log
+    agent.gates = gates
+    agent.full_system = full_system
+    agent.full_briefing = lambda: briefing(full=True)
+    agent.stop_when = lambda: ("token budget used up" if token_budget() > 0 and budget_used() >= 1
+                               and not case.pending_for(name) else None)
     return agent
 
 
@@ -304,6 +614,8 @@ SITE_ROLES: dict[str, str] = {}
 # from then on. The routing assumes the public split of facts (materials in the ERP, keys and approvals in the mail);
 # the private dataset may split them differently, and a routed question must not end up with nobody to answer it.
 RELEASED: set[str] = set()
+# Per website: the record walk its agent learned (WalkRecorder), offered as a file_each action in its briefing.
+WALKS: dict[str, WalkRecorder] = {}
 
 
 def site_role(site_id: str) -> str | None:
@@ -363,12 +675,16 @@ async def solve(task: dict, playwright) -> dict | None:
     context = await read_context(brief + f"\n\nThe websites of this run:\n{listing}")
     SITE_ROLES.clear()
     RELEASED.clear()
+    WALKS.clear()
+    BUDGET_LOGGED.clear()
     SITE_ROLES.update({role: str(context.get(f"{role}_site") or "") for role in ("erp", "mail")
                        if str(context.get(f"{role}_site") or "") in {site["siteId"] for site in sites}})
     case = CaseFile(brief, context)
     print(f"Sanity checks on: {', '.join(sanity.active()) or 'none'}", flush=True)
     print(f"Context: tender {case.reference}, scenario {case.scenario.isoformat()}, company {case.company}, "
-          f"senders {case.senders}", flush=True)
+          f"senders {case.senders}, subjects {case.subjects}", flush=True)
+    print(f"Context gates {'on' if Gates().enabled else 'off (full context every turn)'}; token budget "
+          f"{token_budget() or 'off'}", flush=True)
 
     left = contract.seconds_left(task)
     budget = min(left, 20 * 60) if left != float("inf") else 20 * 60  # a scored run has 20 minutes

@@ -32,7 +32,15 @@ if [ -z "$run" ]; then
     echo "ABORT: scenario values found in $commit"; exit 2
   fi
   run=$(cd "$dir" && "$A" test-run ./starter-kit 2>&1 | grep -o "run_[0-9a-f]\{16\}" | head -1)
-  echo "started $run on $ref $commit"
+  # Name the run after its branch and commit (only our team sees it): NAME=... overrides, else the ref's branch, else
+  # the remote branches that contain the commit.
+  branch="${ref#origin/}"
+  if [ "$branch" = "$ref" ] && ! git show-ref -q "refs/remotes/origin/$ref"; then
+    branch=$(git branch -r --contains "$commit" 2>/dev/null | grep -v HEAD | sed 's#origin/##; s/^ *//' | head -2 | paste -sd+ -)
+  fi
+  name="${NAME:-${branch:-detached} $commit}"
+  [ -n "$run" ] && "$A" run name "$run" "$name" >/dev/null 2>&1
+  echo "started $run on $ref $commit ($name)"
 fi
 
 for _ in $(seq 1 45); do

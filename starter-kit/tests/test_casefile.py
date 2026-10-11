@@ -481,7 +481,10 @@ class AnswerGuardsAndLifecycle(unittest.TestCase):
 
     def test_auto_closing_questions_reject_manual_complete_and_pending_extractions_block_answers(self):
         facts = self.make_casefile()
-        self.assertIn("closes by itself", facts.answer("material:REQ-A1", "complete", "found it"))
+        refused = facts.answer("material:REQ-A1", "complete", "found it")
+        self.assertIn("closes by itself", refused)
+        # the refusal names what is still missing, so the agent knows what to file (run dafda06b)
+        self.assertIn("Still missing: The ERP material for requirement REQ-A1", refused)
         facts.pending = 1
         self.assertIn("still being extracted", facts.answer("discount", "absent", "no discount"))
         facts.pending = 0

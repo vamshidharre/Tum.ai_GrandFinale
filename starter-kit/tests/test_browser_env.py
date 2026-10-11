@@ -110,6 +110,10 @@ class FixtureSite:
             return self.send(request, 200, self.page("account.html", username=html.escape(user)))
         if path == "/orders":
             return self.send(request, 200, self.orders(int(query.get("page") or 1)))
+        if path == "/paged_frame":
+            return self.send(request, 200, self.page("paged_frame.html", links=query.get("links") or "1"))
+        if path == "/sheet":
+            return self.send(request, 200, self.sheet(int(query.get("page") or 1), query.get("links") != "0"))
         if path == "/more-messages":
             time.sleep(self.DELAY)
             after = int(query["after"])
@@ -147,6 +151,25 @@ class FixtureSite:
         previous = f'<a href="/orders?page={number - 1}">Previous page</a>' if number > 1 else ""
         following = f'<a href="/orders?page={number + 1}">Next page</a>' if number < pages else ""
         return self.page("paged_list.html", page=number, pages=pages, rows=rows, previous=previous, next=following)
+
+    SHEETS = 4  # pages of the embedded data sheet, one item each
+
+    def sheet(self, number: int, links: bool) -> str:
+        """One page of the embedded data sheet. Its "Show more" button only ever reports that loading failed; the
+        page's own "Next sheet" link (left out with links=0) leads to the following page."""
+        flag = "" if links else "&links=0"
+        following = (f'<a href="/sheet?page={number + 1}{flag}">Next sheet</a>' if links and number < self.SHEETS else "")
+        previous = f'<a href="/sheet?page={number - 1}{flag}">Previous sheet</a>' if links and number > 1 else ""
+        more = (f'<button type="button" id="more" data-url="/sheet?page={number + 1}{flag}">Show more</button>'
+                if number < self.SHEETS else "")
+        return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Data sheet DS-7</title></head><body>'
+                f"<h1>Data sheet DS-7</h1><table><tr><th>Item</th><th>Length</th></tr>"
+                f"<tr><td>Item S-{number}</td><td>{number * 111} mm</td></tr></table>"
+                f"<p>Page {number} of {self.SHEETS}</p>{previous} {following} {more}"
+                '<p role="status" id="status"></p>'
+                "<script>const more = document.getElementById('more'); if (more) more.addEventListener('click', () => "
+                "{ document.getElementById('status').textContent = 'Loading failed. Please try again.'; });</script>"
+                "</body></html>")
 
     @staticmethod
     def send(request, status: int, body, content_type: str = TYPES[".html"], headers: dict | None = None) -> None:
@@ -597,6 +620,37 @@ class Acting(Case):
         self.assertNotIn("NOT COMPLETE", said)
         self.assertEqual((tab.last_collect["control"], tab.last_collect["capped"]), ("Next page", False))
         self.assertTrue(tab.last_collect["where"].endswith("/orders?page=2"))
+
+    def every_sheet_once(self, text: str) -> None:
+        for number in range(1, FixtureSite.SHEETS + 1):
+            self.assertEqual(text.count(f"Item S-{number} |"), 1, text)
+
+    async def test_collect_follows_the_next_link_of_a_paged_document_inside_a_frame_to_its_end(self):
+        tab = await self.open("/paged_frame")
+        page = await tab.observe()
+        said = await tab.collect(self.control(page, "link", "Next sheet").id)
+        self.every_sheet_once(tab.document)
+        self.assertEqual((tab.last_collect["pages"], tab.last_collect["capped"]), (FixtureSite.SHEETS, False), said)
+
+    async def test_collect_on_a_load_more_that_fails_goes_on_with_the_documents_own_next_link(self):
+        # the trap of sandbox run dafda06b: the "load more" button of an embedded paged document only fails; collect
+        # stopped after it and the agent never got pages 2 to 5 into one document
+        tab = await self.open("/paged_frame")
+        page = await tab.observe()
+        said = await tab.collect(self.control(page, "button", "Show more").id)
+        self.every_sheet_once(tab.document)
+        self.assertIn('"Show more" loaded nothing new', said)
+        self.assertEqual((tab.last_collect["control"], tab.last_collect["pages"], tab.last_collect["capped"]),
+                         ("Next sheet", FixtureSite.SHEETS, False))
+        self.assertNotIn("Loading failed", tab.document.split("collected page 2")[-1])
+
+    async def test_collect_on_a_load_more_that_fails_says_so_when_the_document_has_no_other_way_on(self):
+        tab = await self.open("/paged_frame?links=0")
+        page = await tab.observe()
+        said = await tab.collect(self.control(page, "button", "Show more").id)
+        self.assertIn('"Show more" loaded nothing new', said)
+        self.assertEqual(tab.last_collect["pages"], 1)
+        self.assertIn("Item S-1 |", tab.document)
 
     async def test_fill_reads_the_field_back_and_says_when_it_did_not_keep_what_was_typed(self):
         tab = await self.open("/readback.html")
