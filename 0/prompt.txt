@@ -1,0 +1,30 @@
+I need you to write the linkedin post
+Go to our submission and check our last few runs and do a plot and how we did our best in making our model robutst and in less time : [https://ehl-challenge.atira.ai/team?tab=runs](https://ehl-challenge.atira.ai/team?tab=runs) -- create a image from this showing that I improved in the last moment
+start linkedin post with like this&#x20;
+We tired, we failed. we tried again we failed but every time we failed better.
+Our model prediction improved in the last moments drastically.&#x20;
+learned alot of things and all of my pro models like claude, gemini exhaused both weekly limit and burned 220 dollars of openai credits. It was lot of learning and best weekend in my life. \
+Code in my github
+
+---
+
+We tried. We failed. We tried again but everytime we failed better.
+
+The final hours changed everything.
+At the TUM.ai EHL Grand Finale, our first public test scored 10/100 and took 12:19. We kept iterating until we reached a fully eligible 100/100 public run in 5:10.
+Then we focused on speed and repeatability. Our final three private-dataset runs were all eligible, achieved the same 66.3 quality score, and completed in 2:05, 1:43, and 2:45. Our fastest valid private run was 86% faster than where we started.  -- dont mention these metrics just mention what I built and what I learned
+
+What made the system robust:
+- LLM-directed browsing instead of hard-coded website flows
+- Evidence-first extraction, source tracking, and coverage checks
+- Exact Decimal-based commercial calculations
+- Four parallel browsers, action verification, recovery paths, and pre-submit review gates
+
+The honest lesson: correctness and speed are separate challenges. First, we proved the agent could solve the full task correctly. Then we made it much faster and repeatable under pressure.
+I exhausted my weekly Claude and Gemini limits and burned roughly $220 in OpenAI credits but I learned more about agentic AI, reliability engineering, and building under pressure than I could have imagined. It was one of the best weekends of my life. - mention that with no sleep
+Code: github.com/vamshidharre/Tum.ai_GrandFinale
+#TUMai #EHLGrandFinale #AgenticAI #LLM #AIEngineering #Hackathon
+
+---
+
+In the image mentin how time reduced in the last runs. Dont put extra information that I told you
