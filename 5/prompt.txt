@@ -1,0 +1,17 @@
+Go through the project and tell me what you understood
+
+---
+
+hi
+
+---
+
+https://ehl-challenge.atira.ai/runs/run_a176359f6c02a1e4
+
+---
+
+I want you to download the package and delete the files which are already existed and work on that code and check the code and improve it and try to get the best score and test it by submitting test run using "atira test-run ." Think out of the box and do it.
+
+---
+
+if it is taking 7-10 minutes. what is the use. check the scoreboard there are some teams who did in 38 seconds. what they did? Can you guess and implement the same thing here and check ? Every checking is a new study.
