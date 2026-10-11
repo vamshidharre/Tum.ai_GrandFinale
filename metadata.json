@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MKJ3ENNX8XZQXRCGSNYTKR",
+  "strategy": "manual-commit",
+  "branch": "vamshidhar/fast-parallel",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "starter-kit/agent.py",
+    "starter-kit/submit.py",
+    "starter-kit/tests/test_file_each.py",
+    "starter-kit/tests/test_history.py",
+    "starter-kit/tests/test_parallel_agents.py",
+    "starter-kit/tests/test_steps_action.py",
+    "starter-kit/tests/test_submit.py",
+    "starter-kit/worker.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 33038,
+    "cache_read_tokens": 4797203,
+    "output_tokens": 10655,
+    "api_call_count": 10
+  }
+}
