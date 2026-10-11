@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MZXR1J88W2VDYEZKT8NDBW",
+  "strategy": "manual-commit",
+  "branch": "claude/tier1-speed",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "starter-kit/agent.py",
+    "starter-kit/submit.py",
+    "starter-kit/tests/test_worker.py",
+    "starter-kit/worker.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 202,
+    "cache_creation_tokens": 343388,
+    "cache_read_tokens": 41452402,
+    "output_tokens": 146419,
+    "api_call_count": 101
+  }
+}
