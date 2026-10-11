@@ -16,7 +16,7 @@ Leaderboard 06:56 UTC: #1 Plite 0:38 $0.026 · #8 Saltovka 5:28 $0.159 · #9 Quo
 |---|---|---|---|---|---|---|---|
 | a176359f (scored) | 2c82a7bf (base) | 100 | 6:15 | $0.176 | 219 s, 155 calls | 155 s, 35 clerk turns | baseline |
 | 10def205 (test) | 3fd4d43 | – (looping, cancelled at limit) | >11 min | >$0.37 | 236 s, 364 calls, $0.31 | clerk looped 40+ turns on "Position hinzufügen" | crews + guessed template failed |
-| 99f03f3f (test) | e359542 | running | | | | | |
+| 99f03f3f (test) | e359542 | 19.1 | 10:28 | $0.218 | (see run) | only 1 of 5 positions entered, discount 0 | ❌ reverted: back to the best package |
 
 ## Changes
 
