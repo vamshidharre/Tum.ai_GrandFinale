@@ -428,6 +428,30 @@ async def open_tabs(playwright, sites: list[dict]) -> tuple[list, dict[str, Tab]
 
 
 CREW_MIN_SECONDS = 90  # helpers start only while this much investigation time is left
+SETTLED_SECONDS = 3  # how long the case file must stay complete and unchanged before the investigation ends
+
+
+async def end_when_settled(case: CaseFile, team: Team, tasks: list, mail: str | None) -> None:
+    """End the investigation as soon as the case file is complete: no open question, nothing still being read, no
+    change for SETTLED_SECONDS, and the mailbox agent (which decides when its search for the most recent approvals
+    is done) idle. Agents still browsing are stopped. Test run 10def205: the last question closed ~22 s before the
+    last agent finished re-filing pages that were already on file; in a176359f the tender-portal agent kept opening
+    documents after its questions were answered."""
+    since = None
+    while not team.finished.is_set():
+        await asyncio.sleep(1.0)
+        complete = (not case.pending and (mail is None or mail in team.idle or mail not in team.names)
+                    and not case.questions())
+        if not complete:
+            since = None
+        elif since is None or since[1] != case.version:
+            since = (time.time(), case.version)
+        elif time.time() - since[0] >= SETTLED_SECONDS:
+            print("Every question is answered and nothing is being read: the investigation ends now", flush=True)
+            team.finished.set()
+            for task in tasks:
+                task.cancel()
+            return
 
 
 async def open_site(tab: Tab) -> list[str]:
@@ -492,7 +516,7 @@ async def crew(case: CaseFile, team: Team, tab: Tab, size: int, until: float, ru
         except Exception as error:  # noqa: BLE001
             note = f"opening the website did not finish ({str(error)[:120] or 'timed out'})"
         outcome = await run(helper, name, [f"(before your first turn) {note}"])
-        print(f"[{name}] finished: {outcome if isinstance(outcome, Exception) else json.dumps(outcome, ensure_ascii=False)[:300]}",
+        print(f"[{name}] finished: {repr(outcome) if isinstance(outcome, BaseException) else json.dumps(outcome, ensure_ascii=False)[:300]}",
               flush=True)
         return outcome
 
@@ -566,9 +590,13 @@ async def solve(task: dict, playwright) -> dict | None:
                 return outcome
         crews = [crew(case, team, tab, CREW_SIZE.get(site_role(tab.site_id) or "", 1), investigate_until, bounded)
                  for tab in working if CREW_SIZE.get(site_role(tab.site_id) or "", 1) > 1]
-        outcomes = await asyncio.gather(*(bounded(tab) for tab in working), *crews, return_exceptions=True)
+        tasks = [asyncio.ensure_future(job) for job in [*(bounded(tab) for tab in working), *crews]]
+        mail = next((tab.site_id for tab in working if site_role(tab.site_id) == "mail"), None)
+        settled = asyncio.ensure_future(end_when_settled(case, team, tasks, mail))
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+        settled.cancel()
         for tab, outcome in zip(working, outcomes):
-            print(f"[{tab.site_id}] finished: {outcome if isinstance(outcome, Exception) else json.dumps(outcome, ensure_ascii=False)[:300]}", flush=True)
+            print(f"[{tab.site_id}] finished: {repr(outcome) if isinstance(outcome, BaseException) else json.dumps(outcome, ensure_ascii=False)[:300]}", flush=True)
         for _ in range(40):  # facts of the last filed documents
             if not case.pending:
                 break

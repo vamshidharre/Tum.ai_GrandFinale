@@ -216,3 +216,35 @@ class SecondRequest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EndingWhenSettled(unittest.IsolatedAsyncioTestCase):
+    """The investigation ends once the case file is complete and quiet and the mailbox agent is idle, stopping agents
+    that are still browsing (test run 10def205: ~22 s of re-filing after the last question closed)."""
+
+    def case(self, questions=(), pending=0):
+        return SimpleNamespace(pending=pending, version=7, questions=lambda: list(questions))
+
+    async def test_busy_agents_are_stopped_once_everything_is_on_file(self):
+        case = self.case()
+        team = agent.Team(case, ["portal", "inbox"], time.time() + 600)
+        team.idle.add("inbox")
+        busy = asyncio.ensure_future(asyncio.sleep(60))
+        with patch.object(agent, "SETTLED_SECONDS", 0.5):
+            await asyncio.wait_for(agent.end_when_settled(case, team, [busy], "inbox"), 5)
+        self.assertTrue(team.finished.is_set())
+        await asyncio.sleep(0)
+        self.assertTrue(busy.cancelled())
+
+    async def test_an_open_question_or_a_mailbox_still_searching_keeps_it_going(self):
+        for case, idle in ((self.case(questions=[("discount", "?")]), {"inbox"}), (self.case(), set()),
+                           (self.case(pending=1), {"inbox"})):
+            team = agent.Team(case, ["portal", "inbox"], time.time() + 600)
+            team.idle.update(idle)
+            busy = asyncio.ensure_future(asyncio.sleep(60))
+            watcher = asyncio.ensure_future(agent.end_when_settled(case, team, [busy], "inbox"))
+            await asyncio.sleep(2.5)
+            self.assertFalse(team.finished.is_set())
+            self.assertFalse(busy.cancelled())
+            watcher.cancel()
+            busy.cancel()
