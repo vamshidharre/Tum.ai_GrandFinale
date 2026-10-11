@@ -527,23 +527,30 @@ async def open_tabs(playwright, sites: list[dict]) -> tuple[list, dict[str, Tab]
     return opened, tabs
 
 
-async def further_tab(tab: Tab) -> Tab | None:
-    """Another tab on `tab`'s website, in the same browser and session, for a further agent of that website. It
-    opens as a window of its own where the browser allows it: a tab behind another one is throttled by the browser
-    (timers, drawing), and these agents work at the same time. None when the browser gives no further page."""
+async def further_tab(tab: Tab, taken: list) -> Tab | None:
+    """Another tab on `tab`'s website, in the same browser and session, for a further agent of that website. In the
+    run's own browsers it opens as a window of its own: a tab behind another one is throttled by the browser (timers,
+    drawing), and these agents work at the same time. None when the browser gives no further page.
+    Call it for one tab after the other: the new window is recognised as the next page the browser reports, and
+    `taken` holds the pages already in use (sandbox run a5fca6aa: four tabs opened at once all got the same page,
+    and four agents drove it against each other)."""
     context, page = tab.page.context, None
-    try:
-        browser = context.browser
-        session = await (browser.new_browser_cdp_session() if browser else context.new_cdp_session(tab.page))
+    if browsers.cdp_urls() and os.environ.get("FURTHER_TABS", "window") == "window":
         try:
-            async with context.expect_page(timeout=4000) as opening:
-                await session.send("Target.createTarget", {"url": "about:blank", "newWindow": True,
-                                                           "left": 0, "top": 0, "width": 1280, "height": 800})
-            page = await opening.value
-        finally:
-            await session.detach()
-    except Exception:  # noqa: BLE001  no window of its own: an ordinary further tab
-        page = None
+            browser = context.browser
+            session = await (browser.new_browser_cdp_session() if browser else context.new_cdp_session(tab.page))
+            try:
+                async with context.expect_page(timeout=4000) as opening:
+                    await session.send("Target.createTarget", {"url": "about:blank", "newWindow": True,
+                                                               "left": 0, "top": 0, "width": 1280, "height": 800})
+                page = await opening.value
+            finally:
+                await session.detach()
+        except Exception as error:  # noqa: BLE001  no window of its own: an ordinary further tab
+            print(f"[{tab.site_id}] no window for a further agent, a tab instead: {str(error)[:120]}", flush=True)
+            page = None
+        if page is not None and any(page is other for other in taken):
+            page = None
     try:
         page = page or await context.new_page()
     except Exception as error:  # noqa: BLE001
@@ -615,10 +622,11 @@ async def solve(task: dict, playwright) -> dict | None:
             lead = next((tab for tab in working if site_role(tab.site_id) == role), None)
             if lead is None:
                 continue
-            extra = await asyncio.gather(*(further_tab(lead) for _ in range(max(0, POOL_SIZE[role] - 1))))
-            names = [lead.site_id]
-            for further in extra:
+            names, taken = [lead.site_id], [lead.page]
+            for _ in range(max(0, POOL_SIZE[role] - 1)):  # one after the other, see further_tab
+                further = await further_tab(lead, taken)
                 if further is not None:
+                    taken.append(further.page)
                     names.append(f"{lead.site_id}#{len(names) + 1}")
                     members.append((names[-1], further))
             POOLS[role] = names
