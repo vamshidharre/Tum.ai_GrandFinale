@@ -282,24 +282,36 @@ class EnteringTheBid(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([step for step in tender.done if step == ("click", 7)], [("click", 7)])
         self.assertIn("blocked", script.turns("submit")[3]["user"])
 
-    async def omitting(self, seconds: float) -> tuple[FakeTab, Script]:
-        # run 8a2e1426: stuck on one position, the clerk left out that one and then every position after it
-        omit = {"thought": "", "actions": [{"do": "click", "id": 21}]}
-        script = Script(submit=[omit, omit, omit, done(summary="stopped")])
-        tender = FakeTab("tender", 'Position\n[21] button "Position auslassen (Teilpunkte)"\n[24] button "Weiter"')
+    async def omitting(self, seconds: float, replies: list[dict]) -> tuple[FakeTab, Script]:
+        script = Script(submit=[*replies, done(summary="stopped")])
+        tender = FakeTab("tender", 'Position\n[21] button "Position auslassen (Teilpunkte)"\n[24] button "Weiter"\n'
+                                   '[25] input "Menge"')
         with patch.object(llm, "chat_json", script):
             await submit.submit_bid(tender, FakeTab("mail"), a_bid(), CONTEXT, "THE BRIEF", time.time() + seconds)
         return tender, script
 
+    @staticmethod
+    def one_after_another() -> list[dict]:
+        # run 8a2e1426: stuck on one position, the clerk left out that one and then every position after it, each
+        # straight away, without trying to enter it
+        omit = lambda n: {"thought": f"leave out position {n}", "actions": [{"do": "click", "id": 21}]}
+        typing = lambda n: {"thought": f"quantity try {n}", "actions": [{"do": "fill", "id": 25, "text": str(40 + n)}]}
+        return [omit(1), typing(1), omit(2), typing(2), omit(3)]
+
     async def test_only_the_stuck_position_may_be_left_out_beyond_the_calculators(self):
-        tender, script = await self.omitting(900)
+        tender, script = await self.omitting(900, self.one_after_another())
         # a_bid() has one position the calculator left out, so two omits are allowed and the third is refused
         self.assertEqual([step for step in tender.done if step == ("click", 21)], [("click", 21)] * 2)
-        self.assertIn("blocked", script.turns("submit")[3]["user"])
-        self.assertIn("has its values on the bid sheet", script.turns("submit")[3]["user"])
+        self.assertIn("has its values on the bid sheet", script.turns("submit")[5]["user"])
+
+    async def test_a_clerk_caught_going_in_circles_again_may_leave_out_one_more(self):
+        # run 012496d3: stuck on a second position, the refused omit became a loop of its own
+        omit = {"thought": "the form is stuck, leave this position out", "actions": [{"do": "click", "id": 21}]}
+        tender, _ = await self.omitting(900, [omit] * 6)
+        self.assertEqual(len([step for step in tender.done if step == ("click", 21)]), 3)
 
     async def test_when_time_is_short_positions_may_still_be_left_out(self):
-        tender, _ = await self.omitting(submit.WRAP_UP - 30)
+        tender, _ = await self.omitting(submit.WRAP_UP - 30, self.one_after_another())
         self.assertEqual([step for step in tender.done if step == ("click", 21)], [("click", 21)] * 3)
 
     async def test_other_controls_are_not_counted_as_omitting(self):

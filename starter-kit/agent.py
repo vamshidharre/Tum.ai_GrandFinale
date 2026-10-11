@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 
@@ -29,7 +30,7 @@ from calculator import calculate_bid
 import sanity
 import validate
 from casefile import SHAPES, CaseFile, read_context
-from worker import ACTIONS_HELP, Agent
+from worker import ACTIONS_HELP, CONTROL, Agent, find_control
 
 RESTART_MIN_SECONDS = 120  # an unfinished agent is restarted only while this much investigation time is left
 PING_EVERY = 12  # seconds between the requests that keep an idle agent's website session in use
@@ -58,6 +59,11 @@ Case-file actions:
         material          ERP master data of materials: technical attributes, status, planning, stock
         price_conditions  ERP price conditions of one material: validity, currency, quantity scales
         mail              an opened mail message
+  {{"do": "file_each", "links": [12, 15, 18], "kind": "<kind>", "tabs": [{{"tab": "<tab label>", "kind": "<kind>"}}]}}
+      Open each record you name from the list in front of you (up to 12 links by id) and file it with keep as
+      "kind"; "tabs" (optional) also opens and files those tabs of every record, each with its own kind. You come
+      back to the list with a report of what was filed. Use it when a result list holds several records you need:
+      it saves a turn per record.
   {{"do": "answer", "question": "<id>", "status": "complete" | "absent", "note": "..."}}
       Close an open question: "complete" when all its evidence is filed (needed for lists that only you know to be
       complete), "absent" when you searched properly and what is asked for does not exist.
@@ -85,7 +91,8 @@ How to work
   references, senders and status marks before you rely on a record, and follow the brief's rules on which one
   counts. When in doubt, file both and let the facts decide.
 - Do not reject a candidate record yourself (for example a material whose stroke seems to differ): file every
-  candidate the question names with keep. The case file matches them against the requirement values, which can still
+  candidate the question names, with file_each when a list shows several of them (after you have seen one record
+  and know which of its tabs hold the facts), else with keep. The case file matches them against the requirement values, which can still
   change when amendments or reserves are filed.
 - Follow the search hints a website gives. If a search returns nothing or too much, change the search terms.
 - When a question asks for every item in a list, inspect its page controls and use collect on the control that
@@ -198,6 +205,77 @@ class Team:
         return hold
 
 
+FILE_EACH_LIMIT = 12  # records per file_each action
+FILE_EACH_SECONDS = 150  # and seconds for all of them; the agent continues from the list afterwards
+
+
+async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "") -> str:
+    """The file_each action: the model names several records on the page in front of it (links by id) and, if each
+    record has tabs that matter, the tabs by label; code opens every record and tab and files it with the kind the
+    model gave, then goes back to the list. The model chooses the records and kinds, as with keep; this only saves
+    one model turn per page opened (the ERP agent needed 58-85 turns per run, each resending its whole prompt)."""
+    kind = str(action.get("kind") or "")
+    tabs = [t for t in (action.get("tabs") or []) if isinstance(t, dict) and t.get("tab")]
+    links = [str(i).strip("[] ") for i in (action.get("links") or [])][:FILE_EACH_LIMIT]
+    if not links or not kind:
+        return 'file_each needs "links" (ids of the records on this page) and "kind"'
+    home = tab.page.url
+    # The ids and link targets of the page the model saw when it chose (`seen`); a fresh read could number the
+    # elements differently (a list that loads or reorders), and the wrong record would be filed.
+    page = seen or await tab.observe()
+    targets = {m.group(1): (m.group(3), (re.search(r"->\s*(\S+)", m.group(4)) or [None, None])[1])
+               for m in CONTROL.finditer(page) if m.group(2) in ("link", "clickable")}
+    first = True
+    stop_at = min(deadline, time.time() + FILE_EACH_SECONDS)
+    report = []
+    for aid in links:
+        if time.time() > stop_at:
+            report.append(f"[{aid}] not opened: time for this action is up; file the rest with another file_each")
+            continue
+        label, href = targets.get(aid, (None, None))
+        if label is None:
+            report.append(f"[{aid}] is not a link on this page")
+            continue
+        if not href and not first:  # a link without an address: find it again by its label on the list as it is now
+            if tab.page.url != home:
+                await tab.goto(home)
+            aid_now, why = find_control(await tab.observe(), label, ("link", "clickable"))
+            if aid_now is None:
+                report.append(f'[{aid}] "{label}" not opened: {why}')
+                continue
+            aid = aid_now
+        first = False
+        opened = await (tab.goto(href) if href else tab.click(aid))
+        record = await tab.observe()
+        saw(record)
+        if tab.page.url == home:  # nothing opened (a control that filters or sorts the list): nothing to file
+            report.append(f'[{aid}] "{label}" did not open a record ({opened[:60]})')
+            continue
+        filed = [f"{kind}: {file(kind, tab.document, tab.document_source)[:120]}"]
+        record_url = tab.page.url
+        for extra in tabs:
+            # Looked up on the page as it is now (ids change with every page); if the previous tab replaced the
+            # record and this tab is not on it, back to the record first.
+            now = await tab.observe()
+            control, why = find_control(now, str(extra["tab"]), ("link", "button", "clickable"))
+            if control is None and tab.page.url != record_url:
+                await tab.goto(record_url)
+                now = await tab.observe()
+                control, why = find_control(now, str(extra["tab"]), ("link", "button", "clickable"))
+            if control is None:
+                filed.append(f'tab "{extra["tab"]}": {why}')
+                continue
+            href_tab = next((m.group(4) for m in CONTROL.finditer(now) if m.group(1) == control), "")
+            target = re.search(r"->\s*(\S+)", href_tab or "")
+            await (tab.goto(target.group(1)) if target else tab.click(control))
+            saw(await tab.observe())
+            tab_kind = str(extra.get("kind") or kind)
+            filed.append(f'tab "{extra["tab"]}" as {tab_kind}: {file(tab_kind, tab.document, tab.document_source)[:120]}')
+        report.append(f'[{aid}] "{label}" ({opened[:60]}): ' + "; ".join(filed))
+    await tab.goto(home)
+    return f"file_each opened {len(links)} record(s) and is back on the list:\n" + "\n".join(report)
+
+
 def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float, name: str | None = None) -> Agent:
     name = name or tab.site_id
     shared = len(POOLS.get(site_role(name) or "") or []) > 1
@@ -229,6 +307,10 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float, name: st
             res += "; do not file this same page again — check OPEN QUESTIONS for what is missing on another page, or finish with done"
         return res
 
+    async def file_each_action(action: dict) -> str:
+        return await file_each(tab, action, lambda kind, text, source: case.file(kind, text, source, name),
+                               agent.coverage.saw, deadline, agent.page_seen)
+
     async def answer(action: dict) -> str:
         # A completion action can arrive in the same turn as `keep`. Wait for this agent's own
         # extraction result (up to 45 s) instead of blocking on slow extractions from other websites.
@@ -243,7 +325,7 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float, name: st
 
     # Navigation runs without the model's thinking: about twice as fast. The facts themselves are read by the
     # extraction calls in casefile.py, which keep thinking on. AGENT_THINK=1 turns it back on for comparison.
-    agent = Agent(name, tab, system, briefing, extra={"keep": keep, "answer": answer}, deadline=deadline,
+    agent = Agent(name, tab, system, briefing, extra={"keep": keep, "file_each": file_each_action, "answer": answer}, deadline=deadline,
                   max_steps=int(os.environ.get("AGENT_MAX_STEPS", "150")), idle=team.hook(name),
                   think=os.environ.get("AGENT_THINK") == "1",
                   work=lambda: bool(questions_for_site(name, open_work(case))), relogin=True,

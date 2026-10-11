@@ -129,6 +129,7 @@ class StepsStopAtErrors(unittest.IsolatedAsyncioTestCase):
         _, seen = await run(form)
         self.assertIn("After step 6 the page says: (alert) Lieferzeit fehlt", seen[1])
         self.assertNotIn("ran all", seen[1])
+        self.assertIn("if it confirms what you did, go on", seen[1])  # a notice can be a confirmation too
 
 
 class FindControl(unittest.TestCase):

@@ -66,6 +66,19 @@ STEP_TIMEOUT = 45  # seconds for one page read or one browser action: a hung pag
 # a page of up to 14,000 characters on every call, and input tokens are most of the run's cost (the provider's prompt
 # cache hits only now and then). FULL_TURNS=2 brings back the earlier setting for comparison.
 FULL_TURNS = int(os.environ.get("FULL_TURNS", "1"))
+# How many past turns are kept at all; older ones shrink to their thought. Every kept turn costs ~250 tokens on every
+# later call, and the ERP agent runs 40-60 turns: in run 4876a0ad its calls averaged ~14k input tokens, about half of
+# them old history (ERP was 46% of the run's input). HISTORY_TURNS=0 keeps every turn, as before.
+HISTORY_TURNS = int(os.environ.get("HISTORY_TURNS", "10"))
+
+
+def _thought(reply: str) -> str:
+    """The thought of a stored reply, one line, for the condensed older history."""
+    try:
+        text = str(json.loads(reply).get("thought") or "")
+    except (ValueError, AttributeError):
+        text = reply
+    return " ".join(text.split())[:200] or "(no thought)"
 NAVIGATING = {"click", "goto", "back", "reload", "login", "collect", "fetch", "steps"}
 STEPS_LIMIT, STEPS_TIMEOUT = 30, 240  # one "steps" action: at most this many steps, and seconds in all
 SETTLE_TURNS = 3  # turns an agent takes before it can be held for lack of work: a login, a consent page, a check
@@ -153,28 +166,17 @@ class Agent:
             "what you need, including inside embedded documents: read it fully. Otherwise open the link's address "
             "directly with goto, or try a different way. If you already have the answer, finish with done now.")
         self._circle_hint: str | None = None  # a sanity check that may veto a browser action before it runs (sanity.py)
-        # Presses that brought an error message: control label -> [times, the message]. The turns themselves are
-        # shortened after one round, so without this the agent forgets which button failed (sandbox runs d3ca14df,
-        # 8a2e1426, 012496d3: the bid clerk pressed the same wrong button for 45 to 95 turns and never signed).
-        self.failed_presses: dict[str, list] = {}
         self.turns: list[dict] = []
+        self.page_seen = ""
         self.held: tuple[str, str] | None = None  # a collected or fetched document, until the agent moves on
         self.coverage = Ledger()  # what this agent really opened, typed and followed (coverage.py)
         self.steps = 0
         self.started = time.time()
 
-    def note_press(self, label: str | None, before: str, after: str) -> list[str]:
-        """Remembers a press that made the page announce a new message; returns those messages."""
-        new = [alert for alert in ALERT.findall(after) if alert not in set(ALERT.findall(before))]
-        if new and label:
-            entry = self.failed_presses.setdefault(label, [0, ""])
-            entry[0], entry[1] = entry[0] + 1, " / ".join(new)[:200]
-        return new
-
-    def press_notes(self) -> str:
-        """The remembered presses as lines for the head of a turn; "" when there are none."""
-        return "\n".join(f'- pressing "{label}" brought the message {message!r}' + (f" ({times} times)" if times > 1 else "")
-                         for label, (times, message) in self.failed_presses.items())
+    @property
+    def circle_hints(self) -> int:
+        """How often this agent was told it is going in circles."""
+        return self._circle_hints
 
     def document(self) -> tuple[str, str]:
         """What the agent is looking at: the document it collected or fetched, else the page as last read."""
@@ -185,11 +187,18 @@ class Agent:
 
     def _messages(self, user: str) -> list[dict]:
         messages = [{"role": "system", "content": self.system}]
-        for index, turn in enumerate(self.turns):
-            recent = index >= len(self.turns) - FULL_TURNS
-            messages.append({"role": "user", "content": turn["user"] if recent else turn["short"]})
+        kept = self.turns[-HISTORY_TURNS:] if HISTORY_TURNS > 0 else self.turns
+        older = self.turns[:len(self.turns) - len(kept)]
+        earlier = ""
+        if older:  # one line per older turn: what the agent thought, so it still knows what it tried
+            earlier = ("EARLIER IN THIS TASK (your thoughts, oldest first; their pages and results are no longer shown)\n"
+                       + "\n".join(f"- {_thought(turn['assistant'])}" for turn in older) + "\n\n")
+        for index, turn in enumerate(kept):
+            recent = index >= len(kept) - FULL_TURNS
+            content = turn["user"] if recent else turn["short"]
+            messages.append({"role": "user", "content": (earlier + content) if index == 0 else content})
             messages.append({"role": "assistant", "content": turn["assistant"]})
-        messages.append({"role": "user", "content": user})
+        messages.append({"role": "user", "content": (earlier + user) if not kept else user})
         return messages
 
     async def _escalated_turn(self, user: str) -> dict:
@@ -252,10 +261,12 @@ class Agent:
             done.append(f'{number}. {label}: {str(result)[:80]}')
             if action["do"] == "click":  # a press can bring an error message: stop there instead of filling on blindly
                 after = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
-                new = self.note_press(label, page, after)
-                if new:
+                new = [a for a in ALERT.findall(after) if a not in set(ALERT.findall(page))]
+                if new:  # an error or a confirmation: the model reads which (run 012496d3: a "saved" notice taken
+                    # for an error made the clerk enter the same position again, which the form refused)
                     return (f"ran {len(done)} of {len(steps)} steps: " + "; ".join(done) +
-                            f". After step {number} the page says: {' / '.join(new)[:300]}. Fix that before going on.")
+                            f". After step {number} the page says: {' / '.join(new)[:300]}. If that reports an error, "
+                            "fix it; if it confirms what you did, go on from the page as it is now.")
                 page = after  # as it is after the press, with fresh ids
             elif action["do"] != "fill":
                 page = None  # a choice or a tick can reload the form or bring further fields
@@ -338,6 +349,7 @@ class Agent:
             except Exception as error:  # noqa: BLE001
                 page = f"(the page could not be read: {str(error)[:200]})"
             self.coverage.saw(page)
+            self.page_seen = page  # the page the model answers to: its ids and link targets (file_each)
             results.extend(self.tab.take_events())
             done_text = "\n".join(f"{n}. {text}" for n, text in enumerate(results, 1)) or "(none yet)"
             left = int(self.deadline - time.time())
@@ -470,9 +482,6 @@ class Agent:
                 if do not in ("collect", "fetch"):
                     try:
                         after = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
-                        if do == "click" and not moved:
-                            named = next((m.group(3) for m in CONTROL.finditer(page) if m.group(1) == str(action.get("id"))), None)
-                            self.note_press(named, page, after)
                         changed = state_fingerprint(page) != state_fingerprint(after)
                         if changed:
                             self.coverage.moved()

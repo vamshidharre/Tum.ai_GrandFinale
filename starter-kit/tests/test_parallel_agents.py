@@ -17,11 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # the fakes of the nei
 
 import agent  # noqa: E402
 import llm  # noqa: E402
-import submit  # noqa: E402
 from agent import Team, questions_for_site, share_out, work_share  # noqa: E402
 from casefile import CaseFile  # noqa: E402
 from test_steps_action import STEPS, CascadeForm  # noqa: E402
-from test_submit import CONTEXT, FakeTab, Script, a_bid, done  # noqa: E402
 from worker import Agent  # noqa: E402
 
 
@@ -165,30 +163,6 @@ class FormChain(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ran all 7 steps", result)
         self.assertEqual(form.values, {"size": "M", "finish": "matt", "price": "123,45", "continued": True})
         self.assertEqual(form.reads, 6)  # before step 1, after each of the 3 presses, after each of the 2 choices
-
-    async def test_a_press_that_brought_an_error_message_is_remembered(self):
-        clerk = Agent("clerk", CascadeForm(), "system", lambda: "job")
-        before = 'url: x\n[4] button "Add line"\n[5] button "Continue"'
-        self.assertEqual(clerk.note_press("Add line", before, before + "\n(alert) not possible in this step"),
-                         ["(alert) not possible in this step"])
-        clerk.note_press("Add line", before, before + "\n(alert) not possible in this step")
-        self.assertEqual(clerk.note_press("Continue", before, before), [])
-        self.assertEqual(clerk.press_notes(), "- pressing \"Add line\" brought the message '(alert) not possible in this step' (2 times)")
-
-
-class LeavingOut(unittest.IsolatedAsyncioTestCase):
-    async def test_a_further_position_is_refused_twice_and_then_left_out_so_that_the_bid_is_still_signed(self):
-        # run 012496d3: refused 90 times in a row on its second stuck position, step limit reached, never signed
-        omit = {"thought": "", "actions": [{"do": "click", "id": 21}]}
-        script = Script(submit=[omit] * 5 + [done(summary="stopped")])
-        tender = FakeTab("tender", 'Position\n[21] button "Position auslassen (Teilpunkte)"\n[24] button "Weiter"')
-        with patch.object(llm, "chat_json", script):
-            await submit.submit_bid(tender, FakeTab("mail"), a_bid(), CONTEXT, "THE BRIEF", time.time() + 900)
-        # a_bid() has one position the calculator left out: two omits pass, two are refused, the fifth passes
-        self.assertEqual(tender.done.count(("click", 21)), 3)
-        self.assertIn("blocked", script.turns("submit")[3]["user"])
-        self.assertIn("blocked", script.turns("submit")[4]["user"])
-        self.assertNotIn("blocked", script.turns("submit")[5]["user"])
 
 
 if __name__ == "__main__":

@@ -36,13 +36,14 @@ CLERK_CIRCLE_HINT = (
     "fails too, leave out THIS ONE position with the form's explicit way of omitting a position. Every position "
     "after it has its values on the bid sheet: enter each of them normally, then sign. A signed bid keeps the points "
     "of every position it has; an unsigned one scores nothing.")
-# Leaving out a priced position costs its points, so the clerk may do it once (the position it is stuck on) on top of
-# the positions the calculator left out, unless time is short. Matched on the omit control's label in a few languages.
+# Leaving out a priced position costs its points, so the clerk may do it only for a position it is stuck on: once at
+# the start, and once more each time it is caught going in circles again (run 012496d3: a single allowance for the
+# whole run made a clerk stuck on a second position loop on the refused omit). The positions the calculator left out
+# and a short time are always allowed. Matched on the omit control's label in a few languages.
 OMIT_CONTROL = re.compile(r"auslass|weglass|omit|leave out|skip position|nicht anbieten", re.I)
 # How often the final step is held back because the page does not show the bid (preflight "unproven"). The wait is
 # bounded: a signed bid scores, an unsigned one does not.
 UNPROVEN_REFUSALS = 2
-OMIT_REFUSALS = 2  # how often leaving out a further priced position is refused before it is allowed after all
 # Entering a bid is reading a form and copying values: without the model's long reasoning a turn takes about half
 # the time, and the reply's "thought" still leaves it room to check a conversion.
 CLERK_THINKS, COURIER_THINKS = False, False
@@ -80,6 +81,9 @@ Reading the bid sheet
   This includes a configurator where each choice must be applied before the next one appears: put every choice
   and its apply button, in order, into the same "steps" action, then the amounts and the button that moves on.
   You know every value from the bid; you do not need to see each list first.
+- A position is entered once. When the form saves it, it may list it, show a short confirmation and empty its
+  fields for a further line: then go on with the control that moves to the next position or step, and do not
+  enter the same position again.
 
 {actions}
 One more action:
@@ -202,7 +206,7 @@ async def submit_bid(tender_tab: Tab, mail_tab: Tab | None, bid: Bid, context: d
     # The control that requested the signing code: clicking it again before a code came back voids the code that is
     # on its way (sandbox run a85be021 lost its signature this way). Recorded when the clerk first asks the mailbox.
     code_request = {"label": None, "searches": 0, "last_click": None}
-    omits = {"count": 0, "refused": 0}  # omit controls the clerk pressed, and was refused (bounded in clerk_guard)
+    omits = {"count": 0, "hints": 0}  # omit controls pressed, and the clerk's circle hints at the last one
 
     def _label_of(aid) -> str | None:
         user = clerk.turns[-1]["user"] if clerk.turns else ""
@@ -221,17 +225,15 @@ async def submit_bid(tender_tab: Tab, mail_tab: Tab | None, bid: Bid, context: d
                     "request makes the code already on its way invalid. Ask the mailbox colleague again (ask_mail) "
                     "and say exactly what to look for: the newest code mail for this tender.")
         if label and bid.decision == "bid" and OMIT_CONTROL.search(label):
-            # Refused twice at most per position: run 012496d3 was refused 90 times in a row on its second stuck
-            # position, ran into its step limit and never signed. A signed bid without that position keeps the rest.
-            if (omits["count"] >= len(bid.omitted) + 1 and deadline - time.time() >= WRAP_UP
-                    and omits["refused"] < OMIT_REFUSALS):
-                omits["refused"] += 1
+            stuck_again = clerk.circle_hints > omits["hints"]  # caught going in circles since the last omit
+            if (omits["count"] >= len(bid.omitted) + 1 and not stuck_again
+                    and deadline - time.time() >= WRAP_UP):
                 return (f'blocked: "{label}" would leave out a position that has its values on the bid sheet. Only '
                         "the one position you were stuck on may be left out. Enter this position with its values "
                         "from the bid sheet (all choices with their apply buttons and the amounts in one \"steps\" "
-                        "action), then move on with the control that worked for the positions before.")
+                        "action), then move on.")
             omits["count"] += 1
-            omits["refused"] = 0
+            omits["hints"] = clerk.circle_hints
         if label:
             code_request["last_click"] = label  # read from the page the clerk acted on, before the click happens
         return None
@@ -301,6 +303,12 @@ async def submit_bid(tender_tab: Tab, mail_tab: Tab | None, bid: Bid, context: d
                   + ("time is short" if short else f"held back {held_back} time(s)") + "): "
                   + " | ".join(review.unproven), flush=True)
         result = await tender_tab.click(action.get("id"))
+        if hasattr(tender_tab, "at_login") and await tender_tab.at_login():
+            # Local run: the session ended under the final press and the portal answered with its login form, which
+            # was then taken for the confirmation. Nothing was submitted: the clerk logs in and signs again.
+            return (result + "; BUT the portal now shows its login form: the session had ended and the bid was NOT "
+                    "submitted. Log in again (the login action), return to the review page, request a fresh code if "
+                    "the form asks for one, and use finalize again.")
         # Submitting ends the run and with it the run token: every later model call fails ("expired/unknown run
         # token" in sandbox runs 6da03229, 8184b178, 3c3568bb). So the confirmation is read here, in code, and the
         # clerk stops without another model turn.
@@ -317,11 +325,6 @@ async def submit_bid(tender_tab: Tab, mail_tab: Tab | None, bid: Bid, context: d
         text = f"YOUR JOB: enter, sign and submit the bid for tender {reference}, then read the confirmation."
         if codes:
             text += "\nCodes from the mailbox so far, oldest first: " + ", ".join(codes)
-        failed = clerk.press_notes()
-        if failed:
-            text += ("\nWHAT DID NOT WORK EARLIER IN THIS FORM (those controls did not save your entry or move the "
-                     "form on: take another control for that, the one that worked for the entry before, and redo "
-                     "an entry whose fields the form emptied from its first field)\n" + failed)
         if left < WRAP_UP:
             text += (f"\nTIME IS SHORT ({left} s). Enter no further positions: leave out the ones not entered yet if "
                      "the form allows it, go straight to the signature, fetch the code and submit what is entered.")
