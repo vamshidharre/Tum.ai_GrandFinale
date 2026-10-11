@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4MWG8GQEJ4YNDDG2CWFQ0DN",
   "strategy": "manual-commit",
   "branch": "opencode/batch-nudge",
-  "checkpoints_count": 6,
+  "checkpoints_count": 7,
   "files_touched": [
     "starter-kit/tests/test_worker.py",
     "starter-kit/worker.py"
@@ -36,13 +36,20 @@
       "compact_transcript": "/3/transcript.jsonl",
       "content_hash": "/3/content_hash.txt",
       "prompt": "/3/prompt.txt"
+    },
+    {
+      "metadata": "/4/metadata.json",
+      "transcript": "/4/full.jsonl",
+      "compact_transcript": "/4/transcript.jsonl",
+      "content_hash": "/4/content_hash.txt",
+      "prompt": "/4/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 2167307,
+    "input_tokens": 3403927,
     "cache_creation_tokens": 159709,
-    "cache_read_tokens": 19646519,
-    "output_tokens": 69303,
-    "api_call_count": 169
+    "cache_read_tokens": 28828551,
+    "output_tokens": 94761,
+    "api_call_count": 255
   }
 }
