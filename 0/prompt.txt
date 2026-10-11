@@ -1,0 +1,17 @@
+So far these are the best scores we acheived
+[https://ehl-challenge.atira.ai/runs/run_4876a0ad968a3f10](https://ehl-challenge.atira.ai/runs/run_4876a0ad968a3f10)
+[https://ehl-challenge.atira.ai/runs/run_9902e32b2a3fef30](https://ehl-challenge.atira.ai/runs/run_9902e32b2a3fef30)
+
+where one used the less cost and other in less time. Now do a deep analysis and work and sort out which is working good and keep it and bring it to less time.&#x20;
+
+first download both files and do it.
+
+---
+
+stop what you are doing and just download this&#x20;
+
+[https://ehl-challenge.atira.ai/runs/run_1b83cba349dee165](https://ehl-challenge.atira.ai/runs/run_1b83cba349dee165)
+
+
+because it did fantastic job. Just download and keep it in starter-kit and delete the duplicates.&#x20;
+also download the timed log data and tell me the bottle necks.

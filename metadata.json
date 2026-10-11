@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MSERAC7VQQF2EP8MR7T7FG",
+  "strategy": "manual-commit",
+  "branch": "opencode/batch-nudge",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "starter-kit/agent.py",
+    "starter-kit/browser_env.py",
+    "starter-kit/casefile.py",
+    "starter-kit/coverage.py",
+    "starter-kit/llm.py",
+    "starter-kit/sanity.py",
+    "starter-kit/submit.py",
+    "starter-kit/tests/test_agent_routing.py",
+    "starter-kit/tests/test_browser_env.py",
+    "starter-kit/tests/test_casefile.py",
+    "starter-kit/tests/test_coverage.py",
+    "starter-kit/tests/test_document_formats.py",
+    "starter-kit/tests/test_escalation.py",
+    "starter-kit/tests/test_invented_tender.py",
+    "starter-kit/tests/test_number_formats.py",
+    "starter-kit/tests/test_steps_action.py",
+    "starter-kit/tests/test_submit.py",
+    "starter-kit/tests/test_tab_failover.py",
+    "starter-kit/tests/test_worker.py",
+    "starter-kit/worker.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 133422,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 13931008,
+    "output_tokens": 25979,
+    "api_call_count": 94,
+    "subagent_tokens_complete": false
+  }
+}
