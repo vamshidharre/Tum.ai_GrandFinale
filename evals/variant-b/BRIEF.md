@@ -1,7 +1,8 @@
 # Prepare a tender response
 
 You work in sales for Nordlicht Fluidtechnik AG (USt-IdNr. DE811000777). Prepare one net EUR bid for the Hafenbetriebe
-Elbstadt's procurement AZ-2027/0815, "Hydraulikzylinder für die Schleusentore Süd".
+Elbstadt's procurement AZ-2027/0815, "Hydraulikzylinder für die Schleusentore Süd". The scenario date is 2026-11-10T09:00:00Z; the
+submission deadline is 2026-12-11T12:00:00Z.
 
 Four German websites hold what you need: the buyer's procurement platform (Beschaffungsplattform, `beschaffung`) with
 the procedure and its Leistungsverzeichnis, the buyer's supplier portal (Lieferantenportal, `lieferantenportal`) with
