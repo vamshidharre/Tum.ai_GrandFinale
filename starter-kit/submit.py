@@ -126,8 +126,8 @@ One more action:
       BLOCKER is something the page shows to be wrong. NOT SHOWN is something a review must show and this page
       does not: a page that does not show the bid proves nothing about what the portal holds.
   {{"do": "finalize", "id": 12}}
-      Press the final submit/confirm control only after check_submission reported READY. Never use ordinary click for
-      the irreversible final submit control.
+      Press the final submit/confirm control [12]: it runs the checklist of check_submission first and presses only
+      when that reports READY. Never use ordinary click for the irreversible final submit control.
 
 How to work
 - Start from the page you are on and find the bid form of tender {reference}. Log in again if the portal asks.
@@ -142,10 +142,11 @@ How to work
   options that would alter the bid or have nothing to do with it.
 - On the review page compare what the form lists with the bid sheet: reference, decision, every position, the
   discount and the total. Go back and correct differences while there is time.
-- Signing: trigger the code in the portal, get it with ask_mail, enter it and submit. A submission is final.
+- Signing: click the control that requests the code and put ask_mail right after it in the same reply (ask_mail
+  runs once the click is done). When the code is back, enter it and finalize in one reply. A submission is final.
   If the portal rejects a code, request a fresh one instead of trying the same again.
-- On the final review page, call check_submission. If it is BLOCKED, correct the reported issue and check again.
-  Use finalize for the final irreversible confirmation only after it reports READY.
+- finalize runs the review checklist itself and presses only when it reports READY; if it is BLOCKED, correct the
+  reported issue and try again. check_submission shows the same checklist without pressing anything.
 - You are finished only when the portal confirms that the bid was received. Then finish with done and put the
   confirmation (its receipt number or code, else its wording) in "answer". If you cannot submit, finish with
   done without "answer" and say why in "summary".

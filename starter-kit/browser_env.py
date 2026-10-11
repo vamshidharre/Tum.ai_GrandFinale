@@ -611,10 +611,17 @@ class Tab:
             return f"[{aid}] is disabled (inside a locked or inert area?); nothing happened"
         before = self.page.url
         try:
-            await locator.click(timeout=2500)
-        except Exception:  # noqa: BLE001  hidden in a collapsed menu, or covered: activate it directly
+            await locator.click(timeout=2500, no_wait_after=True)
+        except Exception as error:  # noqa: BLE001  hidden in a collapsed menu, or covered: activate it directly
+            # A click that started a slow page load is reported as failed although it happened (local run: every
+            # login and cookie button; scored run a176359f: a 78 s login). Clicking again would press it twice (a
+            # second code request voids the first code), so only a control that is still there, on a page that
+            # has not moved, is activated directly.
+            if not await self._still_here(locator, before, error):
+                await self.settle()
+                return f'clicked [{aid}] "{info["name"]}"' + (f"; now at {self.page.url}" if self.page.url != before else "")
             try:
-                await locator.evaluate("el => el.click()")
+                await locator.evaluate("el => el.click()", timeout=3000)
             except Exception as error:  # noqa: BLE001
                 return f"could not click [{aid}]: {str(error)[:150]}"
         await self.settle()
@@ -622,6 +629,15 @@ class Tab:
             return "the page now has a modal dialog; read it before acting behind it"
         moved = self.page.url != before
         return f'clicked [{aid}] "{info["name"]}"' + (f"; now at {self.page.url}" if moved else "")
+
+    async def _still_here(self, locator, before: str, error: Exception) -> bool:
+        """After a click that raised: is the control still on an unchanged page, so that the click did not happen?"""
+        if self.page.url != before or "navigat" in str(error).lower() or "detached" in str(error).lower():
+            return False
+        try:
+            return await asyncio.wait_for(locator.count(), 2) > 0
+        except Exception:  # noqa: BLE001  the page is being replaced
+            return False
 
     async def fill(self, aid, text: str, enter: bool = False) -> str:
         locator = self._locator(aid)
@@ -633,7 +649,10 @@ class Tab:
             return f"could not fill [{aid}]: {str(error)[:150]}"
         readback = await self._readback(locator, str(text))  # before Enter can load another page
         if enter:
-            await locator.press("Enter")
+            try:
+                await locator.press("Enter", no_wait_after=True)
+            except Exception:  # noqa: BLE001  Enter started a slow page load (a search): it was pressed
+                pass
             await self.settle()
         if await self._modal_is_open():
             return "the page now has a modal dialog; read it before acting behind it"
@@ -750,7 +769,10 @@ class Tab:
             except Exception:  # noqa: BLE001
                 continue
             if outcome == "ok":
-                await frame.locator("[data-login-password]").first.press("Enter")
+                try:
+                    await frame.locator("[data-login-password]").first.press("Enter", no_wait_after=True)
+                except Exception:  # noqa: BLE001  the login started a slow page load: it was submitted
+                    pass
                 await self.settle()
                 return f"entered the credentials and submitted the login form; now at {self.page.url}"
         return outcome
@@ -794,7 +816,7 @@ class Tab:
                 capped = True
                 break
             try:
-                await control.click(timeout=2500)
+                await control.click(timeout=2500, no_wait_after=True)
             except Exception:  # noqa: BLE001
                 try:
                     await control.evaluate("el => el.click()")

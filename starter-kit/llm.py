@@ -29,6 +29,10 @@ WARM_TIMEOUT = 120  # a quick call (thinking off) this late once the model is aw
 # while the same request asked again answered in seconds. p95 of a navigation turn is ~3.5 s; a long transcription
 # (extraction, larger max_tokens) gets more time before it is doubled. Only once the model is awake.
 HEDGE_AFTER, HEDGE_AFTER_LONG = float(os.environ.get("HEDGE_AFTER", "12")), 40.0
+# Only a call that is slow for the model as it is right now is doubled: when every call is slow (an overloaded model,
+# a local run at 5-30 s a call), a second request only adds load. The wait is at least four times the median of the
+# latest quick calls.
+RECENT: list[float] = []
 MAX_TOKENS_CEILING = 16000  # a reply cut off by its token limit is asked again with twice the room, up to this
 PERMANENT = (400, 401, 403, 404, 413, 422)  # asking again rarely helps: one more try, then give up
 # The hosted Qwen's simulated prices in USD per million tokens, for the estimate in `summary`.
@@ -157,6 +161,9 @@ async def chat_json(messages: list[dict], *, think: bool = True, max_tokens: int
         loop = asyncio.get_running_loop()
         end = loop.time() + (WARM_TIMEOUT if _warm["done"] and not think else CALL_TIMEOUT)
         hedge = None if think or not _warm["done"] else (HEDGE_AFTER_LONG if max_tokens > 6000 else HEDGE_AFTER)
+        if hedge is not None and len(RECENT) >= 5:
+            hedge = max(hedge, 4 * sorted(RECENT)[len(RECENT) // 2])
+        sent = loop.time()
         tasks = {asyncio.ensure_future(one_request(conversation, max_tokens, think))}
         error: BaseException | None = None
         try:
@@ -170,6 +177,9 @@ async def chat_json(messages: list[dict], *, think: bool = True, max_tokens: int
                 for task in done:
                     tasks.discard(task)
                     if task.exception() is None:
+                        if not think and max_tokens <= 6000:  # a quick call: what "slow" means right now
+                            RECENT.append(loop.time() - sent)
+                            del RECENT[:-30]
                         return task.result()
                     error = task.exception()
                 if not done and hedge is not None and len(tasks) == 1 and loop.time() < end:

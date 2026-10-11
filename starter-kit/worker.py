@@ -65,10 +65,13 @@ Reading the page:
 # browsers worked; a page that has not answered in 20 s is broken, not slow.
 STEP_TIMEOUT = int(os.environ.get("STEP_TIMEOUT", "20"))
 VERIFY_TIMEOUT = 12  # the re-read after an action: a page that cannot be read again this fast is stuck
+COLLECT_TIMEOUT = 75  # collect follows a list page by page and fetch downloads a file: more than one page load
 # How many past turns stay word for word; older ones keep the reasoning and drop the page text. Each full turn resends
-# a page of up to 14,000 characters on every call, and input tokens are most of the run's cost (the provider's prompt
-# cache hits only now and then). FULL_TURNS=2 brings back the earlier setting for comparison.
-FULL_TURNS = int(os.environ.get("FULL_TURNS", "1"))
+# a page of up to 14,000 characters and the whole case file on every call, and uncached input is ~88% of a run's
+# cost (run a176359f: $0.154 of $0.176). The current page and the results of the last actions are always there, and
+# earlier turns keep their results and address, so none is needed in full. FULL_TURNS=1 or 2 brings back the
+# earlier settings for comparison.
+FULL_TURNS = int(os.environ.get("FULL_TURNS", "0"))
 # How many past turns are kept at all; older ones shrink to their thought. Every kept turn costs ~250 tokens on every
 # later call, and the ERP agent runs 40-60 turns: in run 4876a0ad its calls averaged ~14k input tokens, about half of
 # them old history (ERP was 46% of the run's input). Only the system prompt is reliably cached (run a176359f: every
@@ -482,10 +485,12 @@ class Agent:
                     results.append(veto)
                     continue
                 before = self.tab.page.url
+                limit = (STEPS_TIMEOUT if do == "steps" else COLLECT_TIMEOUT if do in ("collect", "fetch")
+                         else STEP_TIMEOUT)
                 try:
-                    result = await asyncio.wait_for(self._browser(action), STEPS_TIMEOUT if do == "steps" else STEP_TIMEOUT)
+                    result = await asyncio.wait_for(self._browser(action), limit)
                 except asyncio.TimeoutError:
-                    result = f"{do} took longer than {STEP_TIMEOUT} s and was stopped; the page may be stuck"
+                    result = f"{do} took longer than {limit} s and was stopped; the page may be stuck"
                 except Exception as error:  # noqa: BLE001
                     result = f"{do} failed: {str(error)[:200]}"
                 results.append(result)
