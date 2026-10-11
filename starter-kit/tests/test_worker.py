@@ -257,6 +257,54 @@ class TokenCutOffAndTeamWakeup(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("same actions three times" in p for p in seen_prompts))
 
 
+class VerificationReadReuse(unittest.IsolatedAsyncioTestCase):
+    """One page read per turn instead of two: the verification re-read at the end of a browser-action
+    turn is the next turn's page (sandbox runs re-read every page twice: observe, act, verify, observe)."""
+
+    class CountingTab(FakeTab):
+        def __init__(self):
+            super().__init__(change_on_fill=True)
+            self.reads = 0
+
+        async def observe(self):
+            self.reads += 1
+            return await super().observe()
+
+    async def run_script(self, turns, extra=None):
+        replies = [{"thought": f"t{i}", "actions": acts} for i, acts in enumerate(turns)]
+        replies.append({"thought": "done", "actions": [{"do": "done", "summary": "ok"}]})
+
+        async def model(messages, **kwargs):
+            return replies.pop(0)
+
+        tab = self.CountingTab()
+        with patch.object(llm, "chat_json", model):
+            outcome = await Agent("reuse-test", tab, "system", lambda: "job", max_steps=6, extra=extra).run()
+        return tab, outcome
+
+    async def test_browser_action_turns_share_the_verification_read(self):
+        tab, outcome = await self.run_script([
+            [{"do": "fill", "id": 1, "text": "a"}],
+            [{"do": "fill", "id": 1, "text": "b"}],
+        ])
+        self.assertTrue(outcome["done"])
+        # turn 1 reads + verifies (2 reads), turn 2 reuses the verification and verifies again (1): 3, not 5
+        self.assertEqual(tab.reads, 3)
+
+    async def test_case_file_action_clears_the_cached_read(self):
+        async def keep(action):
+            return "filed"
+
+        tab, outcome = await self.run_script([
+            [{"do": "fill", "id": 1, "text": "a"}],
+            [{"do": "keep", "kind": "material"}],
+        ], extra={"keep": keep})
+        self.assertTrue(outcome["done"])
+        # turn 1 reads + verifies (2), turn 2 reuses it, keep navigates so it clears the cache,
+        # turn 3 reads again: 3, not 2 (a stale list page would file the wrong record)
+        self.assertEqual(tab.reads, 3)
+
+
 if __name__ == "__main__":
     unittest.main()
 

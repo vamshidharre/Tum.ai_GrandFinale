@@ -60,7 +60,7 @@ Reading the page:
   after a session expires, log in again. Surveys, tools and help pages lead away from your task.
 """
 
-STEP_TIMEOUT = 45  # seconds for one page read or one browser action: a hung page must not freeze the whole run
+STEP_TIMEOUT = int(os.environ.get("STEP_TIMEOUT", "25"))  # seconds for one page read or one browser action: a hung page must not freeze the whole run (38 s runs fail fast; 45 s stalls cost minutes)
 # How many past turns stay word for word; older ones keep the reasoning and drop the page text. Each full turn resends
 # a page of up to 14,000 characters on every call, and input tokens are most of the run's cost (the provider's prompt
 # cache hits only now and then). FULL_TURNS=2 brings back the earlier setting for comparison.
@@ -301,16 +301,23 @@ class Agent:
         repeats, last_signature, failures = 0, "", 0
         seen_signatures: dict[str, int] = {}
         stuck = 0  # page reads and navigations in a row that timed out or failed: the tab may be broken
+        fresh_page: str | None = None  # verification re-read of the last turn: reuse it instead of reading again
         while self.steps < self.max_steps and time.time() < self.deadline:
             self.steps += 1
             clock = time.time()
-            try:
-                page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
-            except asyncio.TimeoutError:
-                stuck += 1
-                page = f"(the page did not finish loading within {STEP_TIMEOUT} s; reload it or go elsewhere)"
-            except Exception as error:  # noqa: BLE001
-                page = f"(the page could not be read: {str(error)[:200]})"
+            if fresh_page is not None:
+                # The verification read at the end of the last turn already shows the current page: reuse it
+                # instead of reading the same page twice (every turn cost one extra page read before).
+                page, fresh_page = fresh_page, None
+                read_s = 0.0
+            else:
+                try:
+                    page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+                except asyncio.TimeoutError:
+                    stuck += 1
+                    page = f"(the page did not finish loading within {STEP_TIMEOUT} s; reload it or go elsewhere)"
+                except Exception as error:  # noqa: BLE001
+                    page = f"(the page could not be read: {str(error)[:200]})"
             self.coverage.saw(page)
             self.page_seen = page  # the page the model answers to: its ids and link targets (file_each)
             results.extend(self.tab.take_events())
@@ -408,6 +415,7 @@ class Agent:
                 if do == "wait":
                     await asyncio.sleep(2)
                     results.append("waited two seconds")
+                    fresh_page = None  # the page may have finished loading while waiting: re-read it
                     continue
                 if do in self.extra:
                     refusal = self._may_close(action)
@@ -418,6 +426,9 @@ class Agent:
                         results.append(await self.extra[do](action))
                     except Exception as error:  # noqa: BLE001
                         results.append(f"{do} failed: {str(error)[:200]}")
+                    # Case-file and submission helpers may navigate (file_each opens records and goes back to
+                    # the list; check_submission re-reads, reassigning element ids): re-read next turn.
+                    fresh_page = None
                     continue
                 if moved:
                     results.append(f'skipped {json.dumps(action, ensure_ascii=False)[:120]}: the page changed, its ids are stale')
@@ -445,6 +456,7 @@ class Agent:
                 if do not in ("collect", "fetch"):
                     try:
                         after = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+                        fresh_page = after  # the next turn starts from this read: no second read of the same page
                         changed = state_fingerprint(page) != state_fingerprint(after)
                         if changed:
                             self.coverage.moved()
@@ -461,12 +473,14 @@ class Agent:
                     stuck = stuck + 1 if failed else 0
                 if do in ("collect", "fetch"):
                     self.held = (self.tab.document, self.tab.document_source)
+                    fresh_page = None  # collect/fetch changed the document without a verification re-read
                 elif do in NAVIGATING:
                     self.held = None
                 if do in NAVIGATING or self.tab.page.url != before or not await self._alive():
                     moved = True
             if stuck >= 2:  # the same tab failed twice in a row: carry on in a fresh one (browser_env.Tab.renew)
                 stuck = 0
+                fresh_page = None  # a new tab: the cached read belongs to the old one
                 try:
                     renewed = await asyncio.wait_for(self.tab.renew(), STEP_TIMEOUT)
                     results.append("this tab kept failing to load, so it was replaced by a fresh one: " + renewed)
