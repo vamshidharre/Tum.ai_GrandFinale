@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4MM73896VKNPSCSE8BPYNG7",
   "strategy": "manual-commit",
   "branch": "vamshidhar/fast-parallel",
-  "checkpoints_count": 1,
+  "checkpoints_count": 3,
   "files_touched": [
     "starter-kit/agent.py"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 22014,
-    "cache_creation_tokens": 0,
-    "cache_read_tokens": 495360,
-    "output_tokens": 3973,
-    "api_call_count": 9
+    "input_tokens": 22028,
+    "cache_creation_tokens": 25906,
+    "cache_read_tokens": 4318564,
+    "output_tokens": 14261,
+    "api_call_count": 16
   }
 }
