@@ -20,9 +20,10 @@ from browser_env import NOT_KEPT, Tab
 from coverage import Ledger
 
 ACTIONS_HELP = """Reply with ONE JSON object: {"thought": "<one or two short sentences: what the page tells you and what you do next>", "actions": [ ... ]}.
-The actions run in order. Once an action loads another page the rest of the list is dropped, because the element
-ids change with every page: chain actions only while you stay on the page (fill fields, tick boxes, then click).
-Elements you can act on carry an id like [12].
+The actions run in order. Once an action loads another page, later actions that name an element id are dropped,
+because the ids change with every page: chain those only while you stay on the page (fill fields, tick boxes, then
+click). Actions without an id (goto, back, reload and the case-file actions) still run after a page change, on the
+page that is open by then. Elements you can act on carry an id like [12].
 
 Browser actions:
   {"do": "login"}                                  enter this website's credentials in the login form shown and submit it
@@ -67,6 +68,9 @@ STEP_TIMEOUT = 45  # seconds for one page read or one browser action: a hung pag
 FULL_TURNS = int(os.environ.get("FULL_TURNS", "1"))
 NAVIGATING = {"click", "goto", "back", "reload", "login", "collect", "fetch", "steps"}
 STEPS_LIMIT, STEPS_TIMEOUT = 30, 240  # one "steps" action: at most this many steps, and seconds in all
+SETTLE_TURNS = 3  # turns an agent takes before it can be held for lack of work: a login, a consent page, a check
+ACTIONS_PER_TURN = 12  # room for a few open-and-file pairs in one reply
+NO_ID = {"goto", "back", "reload"}  # browser actions that name no element, so a page change does not make them stale
 ALERT = re.compile(r"\((?:alert|status)\)[^\n]*")  # a message the page announces to screen readers (Tab.observe)
 CONTROL = re.compile(r'\[(\d+)\] (?:\(in collapsed menu\) )?(select|input(?:\(\w+\))?|button|checkbox|radio|link|clickable|switch) "([^"]*)"([^\[]*)')
 
@@ -118,7 +122,8 @@ class Agent:
                  extra: dict[str, Callable[[dict], Awaitable[str]]] | None = None, deadline: float | None = None,
                  max_steps: int = 80, think: bool = False,
                  idle: Callable[[str], Awaitable[str | None]] | None = None,
-                 guard: Callable[[dict], str | None] | None = None, finish_on_repeat: int | None = None, circle_hint: str | None = None):
+                 guard: Callable[[dict], str | None] | None = None, finish_on_repeat: int | None = None, circle_hint: str | None = None,
+                 work: Callable[[], bool] | None = None, relogin: bool = False):
         """`briefing()` heads every turn. `extra` adds actions: name -> handler(action) -> result text.
         `idle("done")` lets the caller hold a finished agent until there is news for it (returns the news) or
         let it stop (returns None)."""
@@ -127,6 +132,11 @@ class Agent:
         self.deadline = deadline or time.time() + 3600
         self.max_steps, self.think, self.idle = max_steps, think, idle
         self.guard = guard
+        # Whether anything is open for this agent. Without work it is held idle before the model is asked, after
+        # its first turns (a login, a consent page). Sandbox run 9902e32b: the ERP agent searched blind for 13 turns
+        # until the specification was read, and the tender-portal agent was asked eight times only to say "done".
+        self.work = work
+        self.relogin = relogin  # log in again without a model turn when the session has ended (investigators)
         # An agent that states the same thought this many turns in a row has its answer and is only "verifying":
         # it gets one forced final turn instead of running out of time (stress test: the courier read the right code,
         # then re-verified it for 14 turns and ended with no answer).
@@ -143,11 +153,28 @@ class Agent:
             "what you need, including inside embedded documents: read it fully. Otherwise open the link's address "
             "directly with goto, or try a different way. If you already have the answer, finish with done now.")
         self._circle_hint: str | None = None  # a sanity check that may veto a browser action before it runs (sanity.py)
+        # Presses that brought an error message: control label -> [times, the message]. The turns themselves are
+        # shortened after one round, so without this the agent forgets which button failed (sandbox runs d3ca14df,
+        # 8a2e1426, 012496d3: the bid clerk pressed the same wrong button for 45 to 95 turns and never signed).
+        self.failed_presses: dict[str, list] = {}
         self.turns: list[dict] = []
         self.held: tuple[str, str] | None = None  # a collected or fetched document, until the agent moves on
         self.coverage = Ledger()  # what this agent really opened, typed and followed (coverage.py)
         self.steps = 0
         self.started = time.time()
+
+    def note_press(self, label: str | None, before: str, after: str) -> list[str]:
+        """Remembers a press that made the page announce a new message; returns those messages."""
+        new = [alert for alert in ALERT.findall(after) if alert not in set(ALERT.findall(before))]
+        if new and label:
+            entry = self.failed_presses.setdefault(label, [0, ""])
+            entry[0], entry[1] = entry[0] + 1, " / ".join(new)[:200]
+        return new
+
+    def press_notes(self) -> str:
+        """The remembered presses as lines for the head of a turn; "" when there are none."""
+        return "\n".join(f'- pressing "{label}" brought the message {message!r}' + (f" ({times} times)" if times > 1 else "")
+                         for label, (times, message) in self.failed_presses.items())
 
     def document(self) -> tuple[str, str]:
         """What the agent is looking at: the document it collected or fetched, else the page as last read."""
@@ -185,11 +212,17 @@ class Agent:
         """Runs a chain of label-addressed steps across page reloads (the "steps" action). Every step is turned into
         the plain action it stands for and passes the same guard as a fill, select, set or click the model sends."""
         done: list[str] = []
+        # The page is read again only when it can have changed: typing into a field leaves the page and its element
+        # ids as they are, and after a press it was read anyway to look for an error message. Reading before every
+        # step cost about half a second each, 14 steps a position (sandbox run 9902e32b: 11.4 s per position).
+        page, reused = None, False
         for number, step in enumerate(steps[:STEPS_LIMIT], start=1):
             if not isinstance(step, dict):
                 continue
             label = str(step.get("press") or step.get("field") or "")
-            page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+            reused = page is not None
+            if page is None:
+                page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
             if "press" in step:
                 aid, kind = find_control(page, label, ("button", "link", "clickable"))
                 action = {"do": "click", "id": aid}
@@ -208,15 +241,24 @@ class Agent:
             veto = self.guard(action) if self.guard else None
             if veto:
                 return f"ran {len(done)} of {len(steps)} steps" + (": " + "; ".join(done) if done else "") + f". Step {number} was refused: {veto}"
-            alerts_before = set(ALERT.findall(page))
             result = await asyncio.wait_for(self._browser(action), STEP_TIMEOUT)
+            if reused and "there is no element" in str(result):  # the page changed after all: read it and do the step again
+                page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+                again, _ = find_control(page, label, ("button", "link", "clickable") if "press" in step
+                                        else ("select", "input", "checkbox", "radio", "switch"))
+                if again is not None:
+                    action["id"] = again
+                    result = await asyncio.wait_for(self._browser(action), STEP_TIMEOUT)
             done.append(f'{number}. {label}: {str(result)[:80]}')
             if action["do"] == "click":  # a press can bring an error message: stop there instead of filling on blindly
                 after = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
-                new = [a for a in ALERT.findall(after) if a not in alerts_before]
+                new = self.note_press(label, page, after)
                 if new:
                     return (f"ran {len(done)} of {len(steps)} steps: " + "; ".join(done) +
                             f". After step {number} the page says: {' / '.join(new)[:300]}. Fix that before going on.")
+                page = after  # as it is after the press, with fresh ids
+            elif action["do"] != "fill":
+                page = None  # a choice or a tick can reload the form or bring further fields
             if any(word in str(result) for word in ("has no option", "did not change", "is disabled", "BUT the field")):
                 return f"ran {len(done)} of {len(steps)} steps: " + "; ".join(done) + f". Step {number} did not take; check it."
         return f"ran all {len(done)} steps: " + "; ".join(done)
@@ -274,8 +316,20 @@ class Agent:
         seen_signatures: dict[str, int] = {}
         stuck = 0  # page reads and navigations in a row that timed out or failed: the tab may be broken
         while self.steps < self.max_steps and time.time() < self.deadline:
+            if self.idle and self.work and self.steps >= SETTLE_TURNS and not self.work():
+                outcome.update(summary=outcome["summary"] or "nothing open for this agent")
+                news = await self.idle("no work")
+                if news is None:
+                    outcome["done"] = True
+                    break
+                results.append(news)
             self.steps += 1
             clock = time.time()
+            if hasattr(self.tab, "enter"):
+                try:
+                    await asyncio.wait_for(self.tab.enter(self.relogin), STEP_TIMEOUT)
+                except Exception as error:  # noqa: BLE001  the agent deals with the page as it is
+                    results.append(f"waiting at the website's entrance failed: {str(error)[:120]}")
             try:
                 page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
             except asyncio.TimeoutError:
@@ -369,7 +423,7 @@ class Agent:
             if self._circle_hint:  # shown with the results of this turn's actions, at the top of the next turn
                 results.append(self._circle_hint)
                 self._circle_hint = None
-            for action in actions[:8]:
+            for action in actions[:ACTIONS_PER_TURN]:
                 if not isinstance(action, dict):
                     continue
                 do = action.get("do")
@@ -390,7 +444,7 @@ class Agent:
                     except Exception as error:  # noqa: BLE001
                         results.append(f"{do} failed: {str(error)[:200]}")
                     continue
-                if moved:
+                if moved and do not in NO_ID:
                     results.append(f'skipped {json.dumps(action, ensure_ascii=False)[:120]}: the page changed, its ids are stale')
                     continue
                 veto = self.guard(action) if self.guard else None
@@ -416,6 +470,9 @@ class Agent:
                 if do not in ("collect", "fetch"):
                     try:
                         after = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+                        if do == "click" and not moved:
+                            named = next((m.group(3) for m in CONTROL.finditer(page) if m.group(1) == str(action.get("id"))), None)
+                            self.note_press(named, page, after)
                         changed = state_fingerprint(page) != state_fingerprint(after)
                         if changed:
                             self.coverage.moved()

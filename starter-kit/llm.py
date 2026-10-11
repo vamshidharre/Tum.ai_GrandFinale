@@ -18,7 +18,7 @@ import time
 from openai import APIStatusError, AsyncOpenAI
 
 MODEL = "qwen"
-MAX_CONCURRENT = 16  # the team's limit is 32 across all its runs, and test runs may overlap
+MAX_CONCURRENT = 28  # the team's limit is 32 across all its runs; a run has up to 12 agents and their extractions
 ATTEMPTS = 5
 CALL_TIMEOUT = 150  # seconds: a model that scaled to zero is slow to answer its first call
 WARM_TIMEOUT = 120  # a quick call (thinking off) this late once the model is awake is stuck: ask again. 75 s cut off

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import io
 import re
+import time
 import zipfile
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
@@ -237,6 +238,19 @@ LOGIN_JS = r"""
 }
 """
 
+# A login form, strictly: one visible password field with a visible name field before it in the same form, and no
+# other field to fill. A lone password-type field (a signing code, a PIN) is not one.
+AT_LOGIN_JS = r"""
+() => {
+  const visible = el => { const cs = getComputedStyle(el); return !el.hidden && cs.display !== 'none' && cs.visibility !== 'hidden' && el.type !== 'hidden'; };
+  const passes = [...document.querySelectorAll('input[type=password]')].filter(visible);
+  if (passes.length !== 1 || !passes[0].form) return false;
+  const typed = [...passes[0].form.querySelectorAll('input,textarea,select')].filter(el => visible(el)
+    && !['submit', 'button', 'checkbox', 'radio', 'hidden', 'image', 'reset'].includes((el.getAttribute('type') || '').toLowerCase()));
+  return typed.length === 2 && typed[0] !== passes[0] && ['text', 'email', ''].includes((typed[0].getAttribute('type') || '').toLowerCase());
+}
+"""
+
 MAX_OBSERVATION = 14000
 UNREADABLE = "(this document could not be read"
 PAGE_BREAK = "===== collected page"  # between the pages of a list or document that `collect` followed to its end
@@ -384,6 +398,29 @@ def document_text(data: bytes, content_type: str, name: str, depth: int = 0) -> 
     return clean_text(text)
 
 
+class Entrance:
+    """The way into one website, shared by every tab on it. Several agents can work a website in tabs of one browser
+    session; when that session ends they all stand in front of the login form at once, and forms that are valid
+    once (the login, a consent, an access check) are spoilt by a second tab loading them (local run with five ERP
+    tabs: 55 s of "the form expired" on every tab). So one tab at a time passes the entrance: it logs in and has
+    the pages that follow to itself for its next turns, the others wait and then load their page again."""
+
+    TURNS, SECONDS = 2, 25  # what the tab that logged in gets to pass what follows the login
+
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.owner = None
+        self.turns, self.until = 0, 0.0
+
+    def taken_by_another(self, tab) -> bool:
+        if self.owner is not None and time.time() > self.until:
+            self.owner = None
+        return self.owner not in (None, tab)
+
+
+ENTRANCES: dict[str, Entrance] = {}
+
+
 class Tab:
     """One browser tab on one website, driven by one agent."""
 
@@ -402,6 +439,57 @@ class Tab:
         self.spares: list = []  # browser contexts of the run's other browsers, for a renewal elsewhere (see renew)
         self.renewals = 0
         self._watch(page)
+
+    @property
+    def entrance(self) -> Entrance:
+        return ENTRANCES.setdefault(urlparse(self.base_url).netloc, Entrance())
+
+    async def at_login(self) -> bool:
+        for frame in self.page.frames:
+            try:
+                if await frame.evaluate(AT_LOGIN_JS):
+                    return True
+            except Exception:  # noqa: BLE001
+                continue
+        return False
+
+    async def enter(self, login: bool = True) -> None:
+        """Before a turn: wait while another tab of this website passes its entrance, and if this tab stands in
+        front of the login form, log in again (`login`), one tab at a time. What follows a login is the agent's."""
+        entrance = self.entrance
+        if entrance.owner is self:
+            entrance.turns -= 1
+            if entrance.turns < 0:
+                entrance.owner = None
+        for _ in range(3):
+            waited = False
+            while entrance.taken_by_another(self):
+                waited = True
+                await asyncio.sleep(0.2)
+            if waited and self.page.url not in ("", "about:blank"):
+                # the session is another one now: this tab's page belongs to the old one
+                where = self.page.url if not await self.at_login() else self.base_url + "/"
+                await self.goto(where)
+            if not login or not await self.at_login():
+                return
+            async with entrance.lock:
+                if entrance.taken_by_another(self):
+                    continue  # another tab logged in while this one waited for its turn
+                entrance.owner, entrance.turns, entrance.until = self, Entrance.TURNS, time.time() + Entrance.SECONDS
+                outcome = await self.login()
+                self.events.append("this website asked for the login (a new or ended session): " + outcome)
+                return
+
+    async def ping(self) -> None:
+        """Keeps the website's session in use while its agent has nothing to do: a request for the start page, sent
+        from the page, which leaves the tab where it is. An ERP session ended after a minute without a request."""
+        if self.page.url in ("", "about:blank"):
+            return
+        try:
+            await asyncio.wait_for(self.page.evaluate(
+                "() => fetch(location.origin + '/', {credentials: 'same-origin', cache: 'no-store'}).then(r => r.status).catch(() => 0)"), 8)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _watch(self, page) -> None:
         page.on("dialog", lambda dialog: asyncio.ensure_future(self._on_dialog(dialog)))

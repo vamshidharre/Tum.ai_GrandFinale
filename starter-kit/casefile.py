@@ -27,6 +27,13 @@ from calculator import (Authorities, BonusBand, Clarification, Commitment, MASS_
 TOPICS = ("discount_approval", "condition_rules", "price_indices", "tech_release", "packaging_tariffs",
           "delivery_release", "fx_fixing", "setup_pools", "project_bonus")
 ASSIGNMENT_KINDS = ("condition_group", "packaging_tariff", "delivery_commitment", "setup_pool", "project_bonus")
+# Mail records the brief's rules name by sender, asked for from the first second on (CaseFile.prefetch): what each is,
+# in words of our own. The subject a mailbox uses for it is in the brief, which every agent has.
+PREFETCH = {"condition_rules": "the condition rules (which part of the price each condition group's discount applies to)",
+            "price_indices": "the price indices (metal index rates, with their validity windows)",
+            "tech_release": "the technical release (the per-end reserve of each specification revision)",
+            "packaging_tariffs": "the packaging tariffs", "delivery_release": "the delivery release (delivery commitments)",
+            "fx_fixing": "the FX fixing", "setup_pools": "the setup pools", "project_bonus": "the project bonus"}
 
 EXTRACT_SYSTEM = """You turn one piece of evidence from a business website into structured records for a tender bid.
 You get the task brief (its rules say what matters), the kind of record wanted, the JSON shape, and the evidence text
@@ -731,9 +738,29 @@ class CaseFile:
                                                   f"{condition.fx_key} ({condition.currency}, material {material.number}).")
         return found
 
+    def prefetch(self) -> list[tuple[str, str]]:
+        """Work the mailbox agents can start on before a question asks for it: the latest record of every kind the
+        brief authorizes a sender for. Which keys a bid needs only shows once the tender's Q&A and the ERP records
+        are read, late in the investigation; the kinds of record are known from the brief at the start. These never
+        hold the investigation up: it ends on `questions()` alone, and a key still missing then is asked for there."""
+        found = []
+        for topic, label in PREFETCH.items():
+            qid, sender = f"topic:{topic}", self.senders.get(topic)
+            if not sender or qid in self.answers:
+                continue
+            if any((row.get(topic) or row.get("topic") == topic) and self._authorized(row, topic)
+                   for row in self.messages.values()):
+                continue
+            found.append((qid, f"For exactly {self.reference}: the latest message about {label}, sent by {sender}@ of "
+                               "the bidder's own mail domain no later than the scenario date. The brief's rules name "
+                               "its subject: search the reference plus that subject word in the inbox and in the "
+                               "archive, open the newest exact-reference message and file it. Answer absent if "
+                               "neither folder has one."))
+        return found
+
     def answer(self, question: str, status: str, note: str, agent: str | None = None) -> str:
         """An agent closes a question: its evidence is complete, or the thing does not exist."""
-        open_ids = {qid for qid, _ in self.questions()}
+        open_ids = {qid for qid, _ in self.questions()} | {qid for qid, _ in self.prefetch()}
         if question not in open_ids:
             return f'"{question}" is not an open question'
         if status not in ("complete", "absent"):
