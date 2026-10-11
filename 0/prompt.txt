@@ -1,0 +1,126 @@
+# AGENTS.md instructions for D:\Personal_Projects\TUM_HackathonFinal
+
+<INSTRUCTIONS>
+# EHL Munich 2026 Grand Finale — Project & Agent Rules (Mandatory)
+
+> **CRITICAL HACKATHON MANDATE (TUM.ai EHL Grand Finale, Oct 10–11, 2026):**
+> Make effective use of **Entire** (`https://entire.io/`). Every AI coding agent (Antigravity, Claude Code, Codex, Cursor, Gemini CLI, Copilot, OpenCode) working in this repository **MUST** capture its agent sessions, use Entire's Continuous Memory (Checkpoints, Search, Graph, Brain, and Trails), and ensure every Git commit is linked to session context. **Submissions without Entire checkpoints pushed to `origin` will NOT be accepted, and effective use of Entire is directly scored.**
+
+- **Repository:** `https://github.com/vamshidharre/Tum.ai_GrandFinale.git` (`gh/vamshidharre/Tum.ai_GrandFinale`)
+- **Event Guide:** `https://hack.entire.io/ehl-munich-2026/`
+- **Entire Docs for LLMs:** `https://docs.entire.io/llms.txt` (MCP: `https://docs.entire.io/mcp`)
+
+---
+
+## 1. Golden Rules for All AI Agents (Claude, Codex, Antigravity, Cursor, Gemini)
+
+1. **Never Bypass Entire Git Hooks:**
+   - **NEVER** pass `--no-verify` to `git commit` or `git push`. Entire relies on Git hooks to attach agent session transcripts and push checkpoint refs (`[entire] Pushing checkpoint ref(s) to origin...`) on every commit and push.
+2. **CLI Source of Truth (`entire agent-help`):**
+   - Never guess `entire` flags or subcommands. Always run `entire agent-help` (or `entire agent-help <command>`) to inspect exact, currently-installed flags.
+   - You are already inside `gh/vamshidharre/Tum.ai_GrandFinale` (auto-detected from `origin`). Never ask the user for the repo name.
+3. **Commit Focused, Atomic Checkpoints Frequently:**
+   - How submissions are scored: *"Make effective use of Entire: capture your agent sessions so your repo gets continuous memory and your agents learn from every attempt, fix and decision."*
+   - Make frequent, well-scoped Git commits after each meaningful implementation, bug fix, or architectural decision so Entire records a rich trail of **Checkpoints** (`entire checkpoint list`, `entire checkpoint explain HEAD`).
+   - Always `git push` after committing so checkpoints sync to `origin`.
+4. **Use Continuous Memory Before Re-inventing or Grepping Blindly:**
+   - **Before starting a feature or debugging:** Search previous sessions, commits, and decisions so context carries over across agents (e.g., from Antigravity to Claude Code or Codex):
+     ```bash
+     entire search "<query>" --json --compact
+     entire checkpoint list
+     entire checkpoint explain HEAD
+     entire why <file>:<line> --json
+     ```
+   - **Codebase Navigation (`entire-graph`):** When `entire-graph` is available, use `entire graph` / `entire-graph search` before broad `grep` or full-file reads to locate implementations, trace relationships, and evaluate change impact (saves up to 71% token spend; tracked via `entire graph stats --repo .`).
+   - **Cross-Agent Memory (`entire-brain`):** When `entire-brain` is available, consult it for prior architectural decisions, rejected approaches, and cross-agent handoffs.
+5. **Trails & Agentic Code Review:**
+   - Trail runners are configured in `.entire/runners/`.
+   - When working with Trails (`entire trail list`, `entire trail create`, `entire trail show`, `entire trail finding`), keep branch commits clean so Entire Runners (risk, confidence, drift, security, review) can score and review changes automatically.
+6. **Self-Healing Diagnostics:**
+   - If a session or checkpoint does not appear or hooks look out of sync, run:
+     ```bash
+     entire status
+     entire doctor
+     ```
+
+---
+
+## 2. Quick Command Reference for Agents
+
+```bash
+# Discover exact CLI capabilities & flags
+entire agent-help
+entire status
+
+# Inspect & explain checkpoints tied to commits
+entire checkpoint list
+entire checkpoint explain HEAD
+entire checkpoint search "<query>"
+
+# Hybrid semantic + keyword search across sessions, commits, and code
+entire search "<query>" --json --compact
+entire search --code "<symbol>"
+
+# Trace the commit, checkpoint, prompt, and session behind a file/line
+entire why <path/to/file>:<line> --json
+
+# Manage & inspect active agent sessions
+entire session current
+entire session list
+entire session tokens <session-id>
+
+# Trails & Runners (Agentic Code Review)
+entire trail list
+entire trail create
+entire runner setup -y
+
+# Diagnose & fix hook/checkpoint issues
+entire doctor
+```
+
+---
+
+## 3. Chosen Challenge: Atira — "From RFQ to Bid" (`rfq`)
+
+- **Challenge Platform:** `https://ehl-challenge.atira.ai/` (`llms.txt`: `https://ehl-challenge.atira.ai/llms.txt`)
+- **Atira CLI Path (Windows):** `C:\Users\vamsh\AppData\Local\atira\bin\atira.cmd` (or `atira`)
+- **Starter Kit & Agent Package Directory:** `starter-kit/`
+- **MCP Server Command:** `atira mcp` (`claude mcp add atira -- atira mcp` / `codex mcp add atira -- atira mcp`)
+- **Core Fair-Play Rules (`https://ehl-challenge.atira.ai/docs/fair-play.md`):**
+  - **NEVER hardcode scenario values** from the public dataset (`VG-2027-7093`, material numbers, prices, discounts, quantities, TANs) into code, prompts, or fallbacks. Every package is inspected by an AI reviewer before running.
+  - **Must be genuinely agentic:** An LLM (`Qwen3.8-Flash-Next` / `Cloudflare Clef` or frontier model via proxy) must decide navigation targets, searches, and document selections at runtime. Deterministic Python helpers are allowed and encouraged for DOM extraction of selected pages, pagination, and exact `Decimal` (`ROUND_HALF_UP`) commercial calculations.
+  - **At most 4 browsers** via `CDP_URLS` (`"browsers": 4` in `agent.json`). Never launch extra browser processes in the sandbox.
+  - **Ranking Order:** `Eligible first -> Quality (0..100) ↓ -> Cost × Time ↑`, evaluated primarily on the **Private Dataset** (same 29 bid rules & answer schema, different website software/layouts/data).
+
+
+
+<!-- entire-agent:begin -->
+Read .entire/agent-guide.md for this repository's workflow, source inspection, and verification guidance.
+@.entire/agent-guide.md
+<!-- entire-agent:end -->
+
+</INSTRUCTIONS>
+
+---
+
+<environment_context>
+  <cwd>D:\Personal_Projects\TUM_HackathonFinal</cwd>
+  <shell>powershell</shell>
+  <current_date>2026-10-11</current_date>
+  <timezone>Europe/Berlin</timezone>
+  <filesystem><workspace_roots><root>D:\Personal_Projects\TUM_HackathonFinal</root><root>C:\Users\vamsh\.codex\visualizations\2026\10\11\01a1293a-78ad-7b62-8f6e-96038f44fa69</root></workspace_roots><permission_profile type="disabled"><file_system type="unrestricted" /></permission_profile></filesystem>
+</environment_context>
+
+---
+
+<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>
+
+---
+
+So far these are the best scores we acheived
+[https://ehl-challenge.atira.ai/runs/run_4876a0ad968a3f10](https://ehl-challenge.atira.ai/runs/run_4876a0ad968a3f10)
+[https://ehl-challenge.atira.ai/runs/run_9902e32b2a3fef30](https://ehl-challenge.atira.ai/runs/run_9902e32b2a3fef30)
+
+where one used the less cost and other in less time. Now do a deep analysis and work and sort out which is working good and keep it and bring it to less time.&#x20;
+
+first download both files and do it.
