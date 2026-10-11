@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N4Q09548QPEYTTEMBHHQ7H",
+  "session_id": "01a12a2a-f376-72a3-bc63-6dd9abd8993d",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T09:29:15.6380625Z",
+  "branch": "claude/tier1-speed",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BEST_RUN_TIMING.md",
+    "starter-kit/agent.py",
+    "starter-kit/tests/test_speed_fixes.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "abcfe18869a5",
+  "checkpoint_transcript_start": 23,
+  "transcript_lines_at_start": 23,
+  "compact_transcript_start": 3,
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T09:29:15.5538015Z",
+    "agent_lines": 117,
+    "agent_removed": 4,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 117,
+    "total_lines_changed": 121,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
