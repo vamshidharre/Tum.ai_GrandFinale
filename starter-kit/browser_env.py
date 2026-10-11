@@ -238,6 +238,11 @@ LOGIN_JS = r"""
 """
 
 MAX_OBSERVATION = 14000
+# Playwright's own defaults wait 30 s for an element and 30 s for a navigation. On the challenge's flaky portals a
+# control that is not there within a few seconds is not coming (scored run a176359f: one click fallback waited the
+# full 30 s on a detached frame), and a fresh tab is quicker than waiting (Tab.renew).
+ACTION_TIMEOUT_MS, NAVIGATION_TIMEOUT_MS = 6000, 15000
+SETTLE_SECONDS = 8  # the longest a page may keep loading data before it is read as it is
 UNREADABLE = "(this document could not be read"
 PAGE_BREAK = "===== collected page"  # between the pages of a list or document that `collect` followed to its end
 
@@ -404,6 +409,12 @@ class Tab:
         self._watch(page)
 
     def _watch(self, page) -> None:
+        for setter, value in (("set_default_timeout", ACTION_TIMEOUT_MS),
+                              ("set_default_navigation_timeout", NAVIGATION_TIMEOUT_MS)):
+            try:
+                getattr(page, setter)(value)
+            except Exception:  # noqa: BLE001  a stand-in page in the tests has no such setting
+                pass
         page.on("dialog", lambda dialog: asyncio.ensure_future(self._on_dialog(dialog)))
         page.on("response", self._on_response)
         page.on("request", lambda request: self.loading.add(request) if request.resource_type in ("document", "xhr", "fetch") else None)
@@ -463,7 +474,7 @@ class Tab:
     async def settle(self):
         """Wait until the page, its frames and the data they fetch have arrived and nothing more is on its way."""
         loop = asyncio.get_running_loop()
-        end, quiet = loop.time() + 12, None
+        end, quiet = loop.time() + SETTLE_SECONDS, None
         await asyncio.sleep(0.1)  # let a click start its request
         while loop.time() < end:
             if self.loading:
@@ -477,7 +488,7 @@ class Tab:
             self.loading.clear()  # a request that never ends must not hold up every later step
         for frame in list(self.page.frames):
             try:
-                await frame.wait_for_load_state("domcontentloaded", timeout=8000 if frame == self.page.main_frame else 3000)
+                await frame.wait_for_load_state("domcontentloaded", timeout=6000 if frame == self.page.main_frame else 3000)
             except Exception:  # noqa: BLE001
                 pass
         for _ in range(3):  # a server error page: retry the same address, as a person would press reload
@@ -707,7 +718,7 @@ class Tab:
         if not self._on_site(target):
             return f"{target} is not on this website; you only work on {self.base_url}"
         try:
-            await self.page.goto(target, wait_until="domcontentloaded", timeout=20000)
+            await self.page.goto(target, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
         except Exception as error:  # noqa: BLE001
             return f"could not open {target}: {str(error)[:150]}"
         await self.settle()
@@ -715,7 +726,7 @@ class Tab:
 
     async def back(self) -> str:
         try:
-            await self.page.go_back(wait_until="domcontentloaded", timeout=15000)
+            await self.page.go_back(wait_until="domcontentloaded", timeout=10000)
         except Exception as error:  # noqa: BLE001
             return f"could not go back: {str(error)[:120]}"
         await self.settle()
@@ -723,7 +734,7 @@ class Tab:
 
     async def reload(self) -> str:
         try:
-            await self.page.reload(wait_until="domcontentloaded", timeout=15000)
+            await self.page.reload(wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
         except Exception as error:  # noqa: BLE001
             return f"could not reload: {str(error)[:120]}"
         await self.settle()
