@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N37ZVC4H5T0634EC9MHPN7",
+  "strategy": "manual-commit",
+  "branch": "claude/tier1-speed",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BEST_RUN_TIMING.md",
+    "starter-kit/agent.py",
+    "starter-kit/browser_env.py",
+    "starter-kit/casefile.py",
+    "starter-kit/tests/fixtures/cookie_wall.html",
+    "starter-kit/tests/test_agent_routing.py",
+    "starter-kit/tests/test_browser_env.py",
+    "starter-kit/tests/test_speed_fixes.py",
+    "starter-kit/worker.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ]
+}

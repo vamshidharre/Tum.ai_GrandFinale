@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N37ZVC4H5T0634EC9MHPN7",
+  "session_id": "01a12a2a-f376-72a3-bc63-6dd9abd8993d",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T09:03:35.1360813Z",
+  "branch": "claude/tier1-speed",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BEST_RUN_TIMING.md",
+    "starter-kit/agent.py",
+    "starter-kit/browser_env.py",
+    "starter-kit/casefile.py",
+    "starter-kit/tests/fixtures/cookie_wall.html",
+    "starter-kit/tests/test_agent_routing.py",
+    "starter-kit/tests/test_browser_env.py",
+    "starter-kit/tests/test_speed_fixes.py",
+    "starter-kit/worker.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "abcfe18869a5",
+  "compact_transcript_start": 0,
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T09:03:35.1005335Z",
+    "agent_lines": 388,
+    "agent_removed": 16,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 388,
+    "total_lines_changed": 404,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1535,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "best-run-a176359f/run_a176359f.jsonl": 351,
+        "best-run-a176359f/run_a176359f.log": 428,
+        "logs-moved-out-of-starter-kit.jsonl": 378,
+        "logss.jsonl": 378
+      }
+    }
+  ]
+}
