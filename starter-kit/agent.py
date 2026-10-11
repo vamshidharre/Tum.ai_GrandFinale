@@ -168,6 +168,30 @@ class Team:
 
 FILE_EACH_LIMIT = 12  # records per file_each action
 FILE_EACH_SECONDS = 150  # and seconds for all of them; the agent continues from the list afterwards
+# #1: the ERP agent worked every record by hand, one click per model turn: 46 turns in run a176359f, 92 in 20e3c020
+# (search, open, a tab, file; then each price view; then each stock breakdown). file_each lets code open and file
+# the records the model names, with the tabs and paths it learned on the first one; it was never used.
+RECORD_BATCH = ("SAVE TURNS: {count} record questions are open on your website. Work ONE candidate record by hand "
+                "and see which of its tabs, and which chain of controls (for example down into a stock breakdown, or "
+                "into a price-scale view), hold the facts the questions ask for. Then file the other candidates of a "
+                "result list with ONE file_each: their links, plus those tabs and paths, each with its kind. Code "
+                "opens and files every record and comes back to the list; do not open them one by one.")
+BATCH_NUDGE_AFTER = 3  # same-kind pages filed one by one before file_each is suggested once
+
+
+def batch_hint(counter: dict, kind: str, filed: bool) -> str:
+    """Suggest file_each once an agent has filed the same kind of page one by one BATCH_NUDGE_AFTER times. `counter`
+    maps kind -> consecutive filings (mutated). Fires once per streak; the model still decides."""
+    if not filed or not kind:
+        return ""
+    counter[kind] = counter.get(kind, 0) + 1
+    for other in [key for key in counter if key != kind]:
+        counter.pop(other, None)
+    if counter[kind] == BATCH_NUDGE_AFTER:
+        return ("; you have now filed several pages of this kind one by one: if the list they came from still shows "
+                "more records of the same kind, go back to that list and file the rest together with one file_each "
+                "(naming the records and the tabs or paths that hold the facts)")
+    return ""
 
 
 async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "") -> str:
@@ -254,6 +278,9 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
         news = case.take_news(name)
         text = f"CASE FILE\n{case.status()}\n\nOPEN QUESTIONS\n"
         text += "\n".join(f"- [{qid}] {question}" for qid, question in questions) or "(none)"
+        records = [qid for qid, _ in questions if qid.startswith(("material:", "data:"))]
+        if site_role(name) == "erp" and len(records) >= 2:
+            text += "\n\n" + RECORD_BATCH.format(count=len(records))
         if news:
             text += "\n\nNEWS FROM YOUR FILED DOCUMENTS\n" + "\n".join(f"- {item}" for item in news)
         own_pending = case.pending_for(name)
@@ -264,6 +291,7 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
         return text
 
     agent: Agent
+    batched: dict = {}  # kind -> consecutive one-by-one filings, for the file_each nudge (#1)
 
     async def keep(action: dict) -> str:
         kind = str(action.get("kind", ""))
@@ -271,6 +299,8 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
         res = case.file(kind, document, source, name)
         if res.startswith("this document is already filed"):
             res += "; do not file this same page again — check OPEN QUESTIONS for what is missing on another page, or finish with done"
+        else:
+            res += batch_hint(batched, kind, res.startswith("filed"))
         # Fix #2: the bidder Q&A filed as a list that `collect` followed to its own end (over more than one page) is
         # the whole Q&A, so its question closes by itself once it is read (casefile.CaseFile.listed_in_full)
         # instead of keeping the agent browsing until it closes it (run a176359f: 41 s of re-opened documents).
@@ -367,6 +397,30 @@ async def open_tabs(playwright, sites: list[dict]) -> tuple[list, dict[str, Tab]
     return opened, tabs
 
 
+async def open_site(tab: Tab) -> list[str]:
+    """#3: open the website from the run's access list, log in with the run's credentials and choose the cookie
+    notice's "necessary only", as every agent's first two turns did by hand (run a176359f: 2 turns, ~5-8 s per
+    agent), while the model still reads the brief. Anything else (access checks, menus, searches) is the model's.
+    Bounded; on any trouble the agent simply starts from the page as it is."""
+    notes: list[str] = []
+    try:
+        notes.append(await asyncio.wait_for(tab.goto(tab.base_url + "/"), 20))
+        for _ in range(3):  # a login and a cookie notice, in whichever order the site shows them
+            if tab.credentials.get("password") and await tab.password_field_shown(0):
+                said = await asyncio.wait_for(tab.login(), 25)
+                notes.append(said)
+                if "still shown" in said:
+                    break  # a refused login is the model's to read: no second try by code
+                continue
+            chosen = await asyncio.wait_for(tab.choose_necessary_cookies(), 15)
+            if not chosen:
+                break
+            notes.append(chosen)
+    except Exception as error:  # noqa: BLE001
+        notes.append(f"opening the website did not finish ({str(error)[:120] or 'timed out'}); look at the page")
+    return [f"(before your first turn, by code) {note}" for note in notes]
+
+
 async def solve(task: dict, playwright) -> dict | None:
     started = time.time()
     sites = [site for site in task.get("access") or [] if isinstance(site, dict) and site.get("siteId") and site.get("url")]
@@ -375,7 +429,19 @@ async def solve(task: dict, playwright) -> dict | None:
         return None
     brief = task["brief"]
     listing = "\n".join(f"- {site['siteId']}: {site['url']}" for site in sites)
-    context = await read_context(brief + f"\n\nThe websites of this run:\n{listing}")
+    # #3: the browsers open every website, log in and choose the cookie notice while the model reads the brief.
+    context_call = asyncio.ensure_future(read_context(brief + f"\n\nThe websites of this run:\n{listing}"))
+    opened, tabs = await open_tabs(playwright, sites)
+    openings = {name: asyncio.ensure_future(open_site(tab)) for name, tab in tabs.items()}
+    try:
+        context = await context_call
+    except BaseException:
+        for browser in opened:
+            try:
+                await browser.close()
+            except Exception:  # noqa: BLE001
+                pass
+        raise
     SITE_ROLES.clear()
     RELEASED.clear()
     SITE_ROLES.update({role: str(context.get(f"{role}_site") or "") for role in ("erp", "mail")
@@ -394,16 +460,22 @@ async def solve(task: dict, playwright) -> dict | None:
     submit_reserve = min(480, budget * 0.4)
     investigate_until = hard_stop - submit_reserve
 
-    opened, tabs = await open_tabs(playwright, sites)
     try:
         working = [tab for name, tab in tabs.items() if not only or name in only]
         team = Team(case, [tab.site_id for tab in working], investigate_until)
         async def bounded(tab):  # an agent stuck past the deadline is stopped so that the others' facts still count
             restarted = False
+            try:  # what code already did on the site (open_site); the agent starts from there. A late opening is
+                # cancelled rather than left running beside the agent on the same tab.
+                opening = await asyncio.wait_for(openings[tab.site_id], 45)
+            except Exception:  # noqa: BLE001
+                opening = []
             while True:
                 limit = max(10.0, investigate_until - time.time() + 20)
+                agent = investigator(case, team, tab, investigate_until)
+                agent.opening, opening = list(opening), []
                 try:
-                    outcome = await asyncio.wait_for(investigator(case, team, tab, investigate_until).run(), limit)
+                    outcome = await asyncio.wait_for(agent.run(), limit)
                 except asyncio.TimeoutError:
                     team.finished.set()
                     return RuntimeError(f"stopped after {limit:.0f} s: still busy at the investigation deadline")

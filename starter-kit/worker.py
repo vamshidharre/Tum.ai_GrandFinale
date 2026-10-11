@@ -170,6 +170,7 @@ class Agent:
             "directly with goto, or try a different way. If you already have the answer, finish with done now.")
         self._circle_hint: str | None = None  # a sanity check that may veto a browser action before it runs (sanity.py)
         self.turns: list[dict] = []
+        self.opening: list[str] = []  # results to show at the first turn: the site opened, logged in, cookies chosen
         self.page_seen = ""
         self.held: tuple[str, str] | None = None  # a collected or fetched document, until the agent moves on
         self.held_by: str | None = None  # "collect" or "fetch": which action produced `held`
@@ -227,13 +228,18 @@ class Agent:
         A press that brings a new announcement stops the chain so the model can read it; with `errors_only` (the
         clerk's enter_positions, Fix #3) only an announcement that reads as a problem stops it, not a "saved" one."""
         done: list[str] = []
+        # Speed-up #2: the page as last read is reused while the steps only fill fields and make choices on it.
+        # Run 20e3c020: every position chain spent 11 s in the browser, mostly re-reading the whole page before each
+        # of its 17 steps. A press, a page that moved or lost its control ids, or a control that is gone reads again.
+        page: str | None = None
         for number, step in enumerate(steps[:limit], start=1):
             if not isinstance(step, dict):
                 continue
             label = str(step.get("press") or step.get("field") or "")
             kinds = (("button", "link", "clickable") if "press" in step
                      else ("select", "input", "checkbox", "radio", "switch"))
-            page = await asyncio.wait_for(self.tab.observe(), READ_TIMEOUT)
+            if page is None:
+                page = await asyncio.wait_for(self.tab.observe(), READ_TIMEOUT)
             aid, kind = find_control(page, label, kinds)
             if aid is None and "no control labelled" in kind:
                 # A configurator can show its next control a moment after the apply that unlocks it: look once more.
@@ -257,10 +263,22 @@ class Agent:
             if veto:
                 return f"ran {len(done)} of {len(steps)} steps" + (": " + "; ".join(done) if done else "") + f". Step {number} was refused: {veto}"
             alerts_before = set(ALERT.findall(page))
+            url = self.tab.page.url
             result = await asyncio.wait_for(self._browser(action), STEP_TIMEOUT)
+            if "there is no element" in str(result):  # the reused read was out of date: read again, try once more
+                page = await asyncio.wait_for(self.tab.observe(), READ_TIMEOUT)
+                fresh_id, _ = find_control(page, label, kinds)
+                if fresh_id is not None:
+                    action["id"] = fresh_id
+                    alerts_before = set(ALERT.findall(page))
+                    result = await asyncio.wait_for(self._browser(action), STEP_TIMEOUT)
             done.append(f'{number}. {label}: {str(result)[:80]}')
-            if action["do"] == "click":  # a press can bring an error message: stop there instead of filling on blindly
+            if action["do"] != "click":
+                if self.tab.page.url != url or not await self._alive():
+                    page = None  # the choice reloaded the page: the next step reads it again
+            else:  # a press can bring an error message: stop there instead of filling on blindly
                 after = await asyncio.wait_for(self.tab.observe(), READ_TIMEOUT)
+                page = after  # the next step starts from this read
                 new = [a for a in ALERT.findall(after) if a not in alerts_before]
                 if errors_only:
                     new = [a for a in new if ERROR_ALERT.search(a)]
@@ -320,12 +338,14 @@ class Agent:
 
     async def _alive(self) -> bool:
         try:
-            return bool(await self.tab.page.main_frame.evaluate("() => document.querySelectorAll('[data-aid]').length > 0"))
-        except Exception:  # noqa: BLE001
+            return bool(await asyncio.wait_for(self.tab.page.main_frame.evaluate(
+                "() => document.querySelectorAll('[data-aid]').length > 0"), 3))
+        except Exception:  # noqa: BLE001  (a page that is being replaced cannot answer: treat it as moved)
             return False
 
     async def run(self) -> dict:
-        results: list[str] = []
+        results: list[str] = list(self.opening)  # what code did on the site before the first turn (agent.open_site)
+        self.opening = []
         outcome = {"done": False, "summary": "", "answer": None, "steps": 0}
         self.log(f"starting at {self.tab.base_url}")
         if self.tab.page.url in ("", "about:blank"):

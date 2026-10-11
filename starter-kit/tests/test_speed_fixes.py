@@ -149,5 +149,178 @@ class Fix2RoutineNewsDoesNotWake(unittest.IsolatedAsyncioTestCase):
         self.assertIn("The case file has news", woke)
 
 
+class FastSteps(unittest.IsolatedAsyncioTestCase):
+    """#2: a steps chain reuses its last page read while it only fills fields; a press reads the page again."""
+
+    async def test_fills_reuse_the_read_and_a_press_reads_again(self):
+        class Form:
+            def __init__(self):
+                self.base_url = "http://form.test"
+                self.page = SimpleNamespace(url=self.base_url + "/f", main_frame=SimpleNamespace(evaluate=self._alive))
+                self.document, self.document_source, self.reads, self.values = "", "", 0, {}
+
+            async def _alive(self, script):
+                return True
+
+            def take_events(self):
+                return []
+
+            async def observe(self):
+                self.reads += 1
+                return ('url: http://form.test/f\n[1] input "Quantity" value=""\n[2] input "Price" value=""\n'
+                        '[3] input "Weeks" value=""\n[4] button "Save"')
+
+            async def fill(self, aid, text, enter=False):
+                self.values[str(aid)] = text
+                return f"filled [{aid}]"
+
+            async def click(self, aid):
+                self.values["saved"] = True
+                return f"clicked [{aid}]"
+
+        form = Form()
+        steps = [{"field": "Quantity", "value": "40"}, {"field": "Price", "value": "12,50"},
+                 {"field": "Weeks", "value": "3"}, {"press": "Save"}]
+        said = await Agent("submit", form, "system", lambda: "job")._steps(steps)
+        self.assertTrue(said.startswith("ran all 4 steps"), said)
+        self.assertEqual(form.values, {"1": "40", "2": "12,50", "3": "3", "saved": True})
+        self.assertEqual(form.reads, 2)  # one read for the three fills, one after the press (was 5)
+
+    async def test_a_control_gone_since_the_read_is_found_again(self):
+        class Rerendering:
+            base_url = "http://form.test"
+
+            def __init__(self):
+                self.page = SimpleNamespace(url=self.base_url + "/f", main_frame=SimpleNamespace(evaluate=self._alive))
+                self.document, self.document_source, self.offset, self.values = "", "", 0, {}
+
+            async def _alive(self, script):
+                return True
+
+            def take_events(self):
+                return []
+
+            async def observe(self):
+                return (f'url: http://form.test/f\n[{1 + self.offset}] input "A" value=""\n'
+                        f'[{2 + self.offset}] input "B" value=""')
+
+            async def fill(self, aid, text, enter=False):
+                if int(aid) < 1 + self.offset:
+                    return f"there is no element [{aid}] on the page any more"
+                self.values[text] = aid
+                self.offset += 10  # every fill re-renders the form with new ids
+                return f"filled [{aid}]"
+
+        form = Rerendering()
+        said = await Agent("submit", form, "system", lambda: "job")._steps(
+            [{"field": "A", "value": "a"}, {"field": "B", "value": "b"}])
+        self.assertTrue(said.startswith("ran all 2 steps"), said)
+        self.assertEqual(set(form.values), {"a", "b"})
+
+
+class FakeSite:
+    """For open_site: a sequence of screens ("login", "cookies") the site shows before its start page."""
+    base_url, credentials = "http://shop.test", {"username": "u", "password": "p"}
+
+    def __init__(self, screens):
+        self.calls, self.screens = [], list(screens)
+
+    async def goto(self, url):
+        self.calls.append("goto")
+        return f"opened {url}"
+
+    async def password_field_shown(self, wait=0):
+        return bool(self.screens) and self.screens[0] == "login"
+
+    async def login(self):
+        self.calls.append("login")
+        self.screens.pop(0)
+        return "entered the credentials and submitted the login form; logged in, now at http://shop.test/"
+
+    async def choose_necessary_cookies(self):
+        if self.screens and self.screens[0] == "cookies":
+            self.screens.pop(0)
+            self.calls.append("cookies")
+            return 'chose "necessary only" on the cookie notice'
+        return None
+
+
+class OpeningASite(unittest.IsolatedAsyncioTestCase):
+    """#3: the site is opened, logged in and its cookie notice answered before the agent's first model turn."""
+
+    async def test_login_then_cookie_notice(self):
+        site = FakeSite(["login", "cookies"])
+        notes = await agent.open_site(site)
+        self.assertEqual(site.calls, ["goto", "login", "cookies"])
+        self.assertEqual(len(notes), 3)
+        self.assertTrue(all(note.startswith("(before your first turn, by code)") for note in notes))
+
+    async def test_cookie_notice_then_login(self):
+        site = FakeSite(["cookies", "login"])
+        await agent.open_site(site)
+        self.assertEqual(site.calls, ["goto", "cookies", "login"])
+
+    async def test_a_refused_login_is_left_to_the_model(self):
+        site = FakeSite(["login"])
+
+        async def refused():
+            site.calls.append("login")
+            return "submitted the login form, but the login form is still shown: read the page"
+
+        site.login = refused
+        await agent.open_site(site)
+        self.assertEqual(site.calls, ["goto", "login"])  # no second try by code
+
+
+class RecordBatchHint(unittest.TestCase):
+    """#1: the ERP agent is told to work one record by hand and file the rest with one file_each."""
+
+    def briefing(self, site: str, questions: list) -> str:
+        agent.SITE_ROLES.clear()
+        agent.SITE_ROLES["erp"] = "inventory"
+        case = SimpleNamespace(questions=lambda: questions, take_news=lambda name: [], status=lambda: "STATUS",
+                               pending=0, pending_for=lambda name=None: 0, brief="BRIEF")
+        tab = SimpleNamespace(site_id=site, base_url=f"http://{site}.test")
+        team = agent.Team(case, [site], time.time() + 600)
+        return agent.investigator(case, team, tab, time.time() + 600).briefing()
+
+    def test_two_open_records_bring_the_hint_on_the_erp_only(self):
+        open_ = [("material:A-1", "find it"), ("material:A-2", "find it")]
+        self.assertIn("SAVE TURNS", self.briefing("inventory", open_))
+        self.assertNotIn("SAVE TURNS", self.briefing("inventory", open_[:1]))
+        self.assertNotIn("SAVE TURNS", self.briefing("portal", open_))
+
+
+class ReadingTheBrief(unittest.IsolatedAsyncioTestCase):
+    """#4: the brief is read without reasoning; with reasoning only when a key fact is missing."""
+
+    async def test_a_complete_answer_needs_one_quick_call(self):
+        import casefile
+        calls = []
+
+        async def model(messages, **kwargs):
+            calls.append(kwargs.get("think"))
+            return {"tender_reference": "T-1", "scenario_date": "2030-01-01T09:00:00Z",
+                    "authorized_senders": {"discount_approval": "boss"}}
+
+        with patch.object(llm, "chat_json", model):
+            context = await casefile.read_context("BRIEF")
+        self.assertEqual(calls, [False])
+        self.assertEqual(context["tender_reference"], "T-1")
+
+    async def test_a_missing_reference_is_asked_again_with_reasoning(self):
+        import casefile
+        calls = []
+
+        async def model(messages, **kwargs):
+            calls.append(kwargs.get("think"))
+            return {"scenario_date": "2030-01-01T09:00:00Z"} if len(calls) == 1 else {"tender_reference": "T-1"}
+
+        with patch.object(llm, "chat_json", model):
+            context = await casefile.read_context("BRIEF")
+        self.assertEqual(calls, [False, True])
+        self.assertEqual(context["tender_reference"], "T-1")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -73,8 +73,24 @@ Expected total with all three: about 4:00–4:45 (the investigation is then boun
 
 | Run | Package | Quality | Time | Cost | Notes |
 |---|---|---|---|---|---|
-| (to fill) | round 2 (#1+#2+#3) | | | | |
+| run_20e3c020 | round 2 (#1+#2+#3) | 100 | **7:38** | $0.248 | brief 11 s; investigation 315 s (ERP 92 calls vs 46; tender and mail first clicks hung 35 s each); bid form + TAN 142 s (positions in one chain each, but 11 s of browser time per chain) |
 
 Tests written for each fix (not run locally, at the user's request): `tests/test_speed_fixes.py`,
 `tests/test_enter_positions.py`, `tests/test_browser_env.py` (slow click, login success/failure),
 `tests/test_worker.py` (fresh tab at the first hard failure).
+
+## 5. Round 3 — move mechanical steps into code (model still decides)
+
+From run 20e3c020 (7:38): the model was not the slow part; the ERP agent took too many turns and our own code was
+slow inside each turn. Allowed by the fair-play rules: code fills forms, logs in, pages and files what the model chose.
+
+| # | Change | Files | Expected |
+|---|---|---|---|
+| 1 | ERP batching: when ≥ 2 record questions are open the ERP agent's briefing says to work ONE record by hand, then file the other candidates of a result list with one `file_each` (links + the tabs/paths learned); plus a one-time nudge after 3 same-kind one-by-one filings | agent.py | −60–120 s, about half the ERP cost |
+| 2 | Faster `steps`: the last page read is reused while steps only fill/choose; a press, a moved page or a vanished control reads again (retry once); bounded modal check (3 s per frame) | worker.py, browser_env.py | ~−30 s on the bid form |
+| 3 | Open, log in and answer the cookie notice ("necessary only", else decline) by code on all sites while the brief is read; the agent starts with these notes; a refused login is left to the model | agent.py, browser_env.py | ~−8 s and 8 model calls |
+| 4 | Read the brief without reasoning; with reasoning only if reference, date or the discount sender is missing | casefile.py | −5–9 s |
+
+| Run | Package | Quality | Time | Cost | Notes |
+|---|---|---|---|---|---|
+| (to fill) | round 3 | | | | |

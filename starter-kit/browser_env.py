@@ -238,6 +238,25 @@ LOGIN_JS = r"""
 """
 
 MAX_OBSERVATION = 14000
+# A cookie wall's privacy-preserving choice: a visible control for "necessary only", else "decline", on a page that
+# mentions cookies; settings/customise links are not choices. Marks the control and returns its label, or null.
+CONSENT_JS = r"""
+() => {
+  const text = ((document.body && document.body.innerText) || '').toLowerCase();
+  if (!text.includes('cookie')) return null;
+  const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && !el.disabled; };
+  const label = el => (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+  const controls = [...document.querySelectorAll('button, a, [role=button], input[type=submit], input[type=button]')]
+    .filter(visible).filter(el => !/einstellung|setting|anpass|custom|details|mehr|more/i.test(label(el)));
+  for (const wanted of [/notwendig|necessary|essential|erforderlich|nur technisch|only required/i,
+                        /ablehnen|reject|decline|deny|nicht zustimmen/i]) {
+    const el = controls.find(e => wanted.test(label(e)));
+    if (el) { el.setAttribute('data-consent-choice', '1'); return label(el).slice(0, 80); }
+  }
+  return null;
+}
+"""
 # Playwright's own defaults wait 30 s for an element and 30 s for a navigation. On the challenge's flaky portals a
 # control that is not there within a few seconds is not coming (scored run a176359f: one click fallback waited the
 # full 30 s on a detached frame), and a fresh tab is quicker than waiting (Tab.renew).
@@ -575,12 +594,31 @@ class Tab:
             .some(el => visible(el) && (el.tagName !== 'DIALOG' || el.matches(':modal')));
         }"""
         for frame in self.page.frames:
-            try:
-                if await frame.evaluate(script):
+            try:  # bounded: a frame that is being replaced never answers (run 20e3c020: clicks ran past 20 s)
+                if await asyncio.wait_for(frame.evaluate(script), 3):
                     return True
             except Exception:  # noqa: BLE001
                 continue
         return False
+
+    async def choose_necessary_cookies(self) -> str | None:
+        """On a cookie wall, choose the privacy-preserving option (only the necessary cookies, else decline), as
+        every agent's first or second turn did by hand. Nothing happens on a page that does not mention cookies or
+        offers only "accept all": the model deals with it. Returns what was chosen, or None."""
+        for frame in list(self.page.frames):
+            try:
+                label = await asyncio.wait_for(frame.evaluate(CONSENT_JS), 3)
+            except Exception:  # noqa: BLE001
+                continue
+            if not label:
+                continue
+            try:
+                await frame.locator("[data-consent-choice]").first.click(timeout=2500, no_wait_after=True)
+            except Exception:  # noqa: BLE001  a click that started a page load is still a click
+                pass
+            await self.settle()
+            return f'chose "{label}" on the cookie notice; now at {self.page.url}'
+        return None
 
     def _locator(self, aid):
         try:

@@ -831,7 +831,15 @@ class CaseFile:
 
 
 async def read_context(brief: str) -> dict:
-    """The tender's identity and the brief's sender rules, read from the brief by the model."""
-    return await llm.chat_json([{"role": "system", "content": "You read a task brief and return facts from it as JSON."},
-                                {"role": "user", "content": f"{CONTEXT_SHAPE}\n\nTASK BRIEF\n{brief}"}],
-                               think=True, max_tokens=1500, label="context")
+    """The tender's identity and the brief's sender rules, read from the brief by the model. Without reasoning
+    first (#4): every agent waits for this call, and with reasoning it took 8-22 s (runs a176359f, 99f03f3f,
+    20e3c020) for facts the brief states plainly. Asked again with reasoning when the reference, the date or a
+    sender rule is missing."""
+    messages = [{"role": "system", "content": "You read a task brief and return facts from it as JSON."},
+                {"role": "user", "content": f"{CONTEXT_SHAPE}\n\nTASK BRIEF\n{brief}"}]
+    context = await llm.chat_json(messages, think=False, max_tokens=1500, label="context")
+    senders = context.get("authorized_senders") if isinstance(context, dict) else None
+    if (_text(context.get("tender_reference")) and parse_when(context.get("scenario_date"))
+            and isinstance(senders, dict) and _text(senders.get("discount_approval"))):
+        return context
+    return await llm.chat_json(messages, think=True, max_tokens=1500, label="context")

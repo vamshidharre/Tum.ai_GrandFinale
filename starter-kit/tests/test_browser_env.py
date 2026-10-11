@@ -675,6 +675,17 @@ class Acting(Case):
         self.assertEqual([path for method, path, _ in SITE.requests if method == "POST"], ["/veryslow/echo"])
         self.assertIn("Received", await tab.observe())
 
+    async def test_a_cookie_wall_gets_the_necessary_only_choice(self):
+        tab = await self.open("/cookie_wall.html")
+        said = await tab.choose_necessary_cookies()
+        self.assertIn("Nur notwendige Cookies", said)
+        self.assertIn("/arrived/necessary", tab.page.url)
+
+    async def test_a_page_without_a_cookie_notice_is_left_alone(self):
+        tab = await self.open("/form.html")
+        self.assertIsNone(await tab.choose_necessary_cookies())
+        self.assertTrue(tab.page.url.endswith("/form.html"))
+
     async def test_a_login_that_goes_through_is_detected_at_once(self):
         tab = await self.open("/login", LOGIN)
         started = time.monotonic()
