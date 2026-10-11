@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N0Y5TTEVF6SWJG4YFXXTF0",
+  "strategy": "manual-commit",
+  "branch": "claude/tier1-speed",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".gitignore",
+    "BEST_RUN_TIMING.md",
+    "SPEED_PLAN.md",
+    "logs (2).jsonl",
+    "starter-kit/agent.py",
+    "starter-kit/browser_env.py",
+    "starter-kit/casefile.py",
+    "starter-kit/llm.py",
+    "starter-kit/submit.py",
+    "starter-kit/tests/fixtures/slow_send.html",
+    "starter-kit/tests/test_agent_routing.py",
+    "starter-kit/tests/test_browser_env.py",
+    "starter-kit/tests/test_crew.py",
+    "starter-kit/tests/test_enter_positions.py",
+    "starter-kit/tests/test_history.py",
+    "starter-kit/tests/test_worker.py",
+    "starter-kit/worker.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 33910,
+    "cache_read_tokens": 7011579,
+    "output_tokens": 17029,
+    "api_call_count": 12
+  }
+}
