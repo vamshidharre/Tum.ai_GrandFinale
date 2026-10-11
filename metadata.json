@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4N23FM9Y5MZS8HTR9AN034E",
   "strategy": "manual-commit",
   "branch": "claude/tier1-speed",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "starter-kit/logs (2).jsonl"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 2,
-    "cache_creation_tokens": 8190,
-    "cache_read_tokens": 173704,
-    "output_tokens": 3660,
-    "api_call_count": 1
+    "input_tokens": 6,
+    "cache_creation_tokens": 12430,
+    "cache_read_tokens": 1580219,
+    "output_tokens": 4900,
+    "api_call_count": 3
   }
 }
