@@ -108,7 +108,8 @@ Round 3 worked at the start (agents begin at 0:03, already logged in; mail used 
 | Run | Package | Quality | Time | Cost | Notes |
 |---|---|---|---|---|---|
 | run_665adb0e (SCORED, sub_5e116351) | **round 3** (started 09:04 UTC, before round 4 at 09:09) | 100 | **4:50** | $0.223 | first run under 5 min; cost up: supplier portal 40 calls/472k tokens (looped pages 1-4 for a mail record), ERP 49/566k (stock and prices by hand), tender 18/251k (9 "done" wake-ups) — all three targeted by round 4 |
-| (to fill) | round 4 + 5 | | | | |
+| run_ab00e578 (test) | rounds 4 + 5 | – | ~7:00 | investigation $0.136 (was $0.200) | tender 10 turns (was 18), supplier portal 12 (was 40), enter_positions entered 4 positions in one turn; BUT investigation 302 s: ERP 53 turns because 3 of 4 file_each filed no stock/price page (label shown twice; a maintenance notice in front of a record) and the model redid them by hand; model slower (2.9 s/call) |
+| (to fill) | round 6 | | | | |
 
 ## 7. Round 5 — cost: no repeated briefing in the history
 
@@ -117,3 +118,13 @@ Round 3 worked at the start (agents begin at 0:03, already logged in; mail used 
 | The previous turn kept in full in the history no longer repeats its case file and open questions (the new message has them as they are now); its page and results stay | ~2k of the ~9k input tokens per call (run 665adb0e); uncached input ≈ 90% of the cost | −20% input tokens per call, no change in what the model sees now |
 
 Expected with rounds 4 + 5 on top of 665adb0e: about 4:15-4:45 and **$0.12-0.15** (cost × time ~30-35 $·s instead of 64.8).
+
+## 8. Round 6 — make the ERP batch actually get through
+
+| Change | Why (run ab00e578) | Files |
+|---|---|---|
+| `pick_control`: a label shown twice takes the record's own link (its address carries the record's id), or either when both lead to the same address | "path labels were ambiguous": the price/stock links appear in the menu and on the record | agent.py |
+| `pass_notice`: a notice page/dialog (notice word in title/heading, no input field) with one "continue/accept" control is pressed by code during file_each, as the model would | "Wartungshinweis … Akzeptieren und fortfahren" appeared in front of records while code walked them | agent.py |
+| file_each waits 3 s (was 10 s) for its pages to be read | 4 × 10 s of ERP time when the model was slow | agent.py |
+
+Expected: ERP ~20 turns instead of 53 → investigation ~120-160 s; total ~3:30-4:15.

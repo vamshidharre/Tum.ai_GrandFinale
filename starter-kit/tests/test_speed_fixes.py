@@ -324,3 +324,38 @@ class ReadingTheBrief(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BatchPathsGetThrough(unittest.IsolatedAsyncioTestCase):
+    """Run ab00e578: file_each filed no stock or price page because a label appeared twice (menu and record) and a
+    maintenance notice stood in front of a record."""
+
+    def test_a_label_shown_twice_takes_the_records_own_link(self):
+        page = ('url: http://erp.test/rec?material=M-7\n[3] link "Prices" -> /prices\n'
+                '[9] link "Prices" -> /prices?material=M-7')
+        aid, _ = agent.pick_control(page, "Prices", ("link",), "http://erp.test/rec?material=M-7")
+        self.assertEqual(aid, "9")
+
+    def test_two_links_to_the_same_address_are_one_choice(self):
+        page = 'url: http://erp.test/rec\n[3] link "Stock" -> /stock?m=1\n[9] link "Stock" -> /stock?m=1'
+        self.assertEqual(agent.pick_control(page, "Stock", ("link",), "http://erp.test/rec")[0], "3")
+
+    def test_a_real_ambiguity_stays_unresolved(self):
+        page = 'url: http://erp.test/rec\n[3] link "Stock" -> /stock?m=1\n[9] link "Stock" -> /stock?m=2'
+        self.assertIsNone(agent.pick_control(page, "Stock", ("link",), "http://erp.test/rec")[0])
+
+    async def test_a_notice_page_is_passed_and_a_form_is_not(self):
+        clicked = []
+
+        class Tab:
+            async def click(self, aid):
+                clicked.append(aid)
+                return f"clicked [{aid}]"
+
+        notice = 'url: http://erp.test/x\ntitle: Wartungshinweis\n# Wartungshinweis\nSome functions are under maintenance.\n[4] button "Akzeptieren und fortfahren"'
+        self.assertEqual(await agent.pass_notice(Tab(), notice), "Akzeptieren und fortfahren")
+        check = notice + '\n[5] input "Code" value=""'
+        self.assertIsNone(await agent.pass_notice(Tab(), check))  # a field to fill is the model's
+        record = 'url: http://erp.test/rec\ntitle: Material M-7\n# Material M-7\nHinweis: see stock.\n[6] link "Weiter" -> /next'
+        self.assertIsNone(await agent.pass_notice(Tab(), record))  # a record that only mentions a notice
+        self.assertEqual(clicked, ["4"])

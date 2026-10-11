@@ -17,6 +17,8 @@ import re
 import sys
 import time
 
+from urllib.parse import parse_qs, urlparse
+
 from playwright.async_api import async_playwright
 
 import browsers
@@ -182,7 +184,8 @@ RECORD_BATCH = ("SAVE TURNS: {count} record questions are open on your website. 
                 "stock or prices by hand again. Filed pages are read within seconds: wait for their facts in the "
                 "case file instead of opening them again.")
 BATCH_NUDGE_AFTER = 3  # same-kind pages filed one by one before file_each is suggested once
-FILED_READ_WAIT = 10  # seconds file_each waits for the pages it filed to be read before the agent's next turn
+FILED_READ_WAIT = 3  # seconds file_each waits for the pages it filed to be read (10 s cost up to 40 s of ERP time when
+# the model was slow, run ab00e578; the result now also says not to open them again)
 
 
 def batch_hint(counter: dict, kind: str, filed: bool) -> str:
@@ -198,6 +201,62 @@ def batch_hint(counter: dict, kind: str, filed: bool) -> str:
                 "more records of the same kind, go back to that list and file the rest together with one file_each "
                 "(naming the records and the tabs or paths that hold the facts)")
     return ""
+
+
+# Run ab00e578: three of four ERP file_each actions filed no stock or price page, so the model clicked them all again
+# by hand (~8 turns per material, ERP 53 turns, investigation 302 s). Two causes, both handled in code here:
+# 1. a label shown twice on a record page (once in the menu, once for the record): pick_control takes the one whose
+#    address belongs to the record, or either one when both lead to the same address;
+# 2. a notice page or dialog put in front of the record ("maintenance note ... accept and continue"): pass_notice
+#    presses its single way forward, as the model does in its own turns, but only on a page without input fields.
+NOTICE_PAGE = re.compile(r"hinweis|wartung|maintenance|notice|meldung|achtung|attention|information|bestätig|confirm",
+                         re.I)
+NOTICE_GO = re.compile(r"akzeptier|fortfahren|weiter|continue|accept|proceed|verstanden|got it|schließen|close|"
+                       r"\bok\b|bestätigen|confirm", re.I)
+
+
+def pick_control(page: str, label: str, kinds: tuple[str, ...], url: str) -> tuple[str | None, str]:
+    """find_control, and when the label is ambiguous: the controls if they all lead to the same address, else the
+    one control whose address carries a value of the current page's address (the record's own link)."""
+    aid, why = find_control(page, label, kinds)
+    if aid is not None or "controls are labelled" not in why:
+        return aid, why
+    listed = re.search(r"\(((?:\[\d+\](?:, )?)+)\): use their ids$", why)
+    ids = re.findall(r"\[(\d+)\]", listed.group(1)) if listed else []
+    targets = {m.group(1): (re.search(r"->\s*(\S+)", m.group(4)) or [None, None])[1]
+               for m in CONTROL.finditer(page) if m.group(1) in ids}
+    addresses = set(targets.values())
+    if len(addresses) == 1 and None not in addresses:
+        return ids[0], why
+    query = urlparse(url)
+    tokens = [value for values in parse_qs(query.query).values() for value in values if len(value) >= 3]
+    tokens += [part for part in query.path.split("/") if len(part) >= 4]
+    scoped = [aid for aid, target in targets.items() if target and any(token in target for token in tokens)]
+    if len(scoped) == 1:
+        return scoped[0], why
+    return None, why
+
+
+async def pass_notice(tab, page: str) -> str | None:
+    """A notice in front of the page (a dialog, or a short page that announces something) with a single way forward
+    and no input field: press it and say what was pressed; None leaves the page as it is."""
+    modal = "!! A MODAL DIALOG" in page
+    area = page.split("!! END OF MODAL DIALOG")[0] if modal else page
+    # Without a dialog, only a short page whose title or heading announces a notice counts (a record page that
+    # merely mentions a "Hinweis" somewhere and has a "Weiter" link must not be left).
+    head = "\n".join(line for line in page.splitlines()[:8] if line.startswith(("title:", "#")))
+    if not modal and (len(page) > 2500 or not NOTICE_PAGE.search(head)):
+        return None
+    controls = [(m.group(1), m.group(2), m.group(3)) for m in CONTROL.finditer(area)]
+    if any(kind.split("(")[0] in ("input", "select", "checkbox", "radio", "switch") for _, kind, _ in controls):
+        return None  # a check to pass or a form to fill is the model's
+    forward = list(dict.fromkeys(aid for aid, kind, label in controls
+                                 if kind in ("button", "link", "clickable") and NOTICE_GO.search(label)))
+    if len(forward) != 1:
+        return None
+    label = next(label for aid, _, label in controls if aid == forward[0])
+    await tab.click(forward[0])
+    return label
 
 
 async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "") -> str:
@@ -238,6 +297,10 @@ async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "
         first = False
         opened = await (tab.goto(href) if href else tab.click(aid))
         record = await tab.observe()
+        passed = await pass_notice(tab, record)
+        if passed:  # a notice came first: the record is behind it
+            opened += f'; passed a notice ("{passed}")'
+            record = await tab.observe()
         saw(record)
         if tab.page.url == home:  # nothing opened (a control that filters or sorts the list): nothing to file
             report.append(f'[{aid}] "{label}" did not open a record ({opened[:60]})')
@@ -252,12 +315,16 @@ async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "
             name = " > ".join(path)
             missing = None
             for number, step in enumerate(path):
+                kinds = ("link", "button", "clickable")
                 now = await tab.observe()
-                control, why = find_control(now, step, ("link", "button", "clickable"))
+                control, why = pick_control(now, step, kinds, tab.page.url)
+                if control is None and await pass_notice(tab, now):  # a notice in the way: past it, look again
+                    now = await tab.observe()
+                    control, why = pick_control(now, step, kinds, tab.page.url)
                 if control is None and number == 0 and tab.page.url != record_url:
                     await tab.goto(record_url)
                     now = await tab.observe()
-                    control, why = find_control(now, step, ("link", "button", "clickable"))
+                    control, why = pick_control(now, step, kinds, tab.page.url)
                 if control is None:
                     missing = f'"{name}": {why}'
                     break
