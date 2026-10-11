@@ -87,12 +87,13 @@ Reading the bid sheet
   moves on), do a whole step in one "steps" action, using the labels exactly as the page shows them. If it stops
   part-way, read the page and carry on from there. You know every value from the bid; you do not need to see each
   list first.
-- POSITIONS: the moment you see the step where positions are entered, enter ALL of them with ONE enter_positions
-  action (described below): the steps of one position as a template, with placeholders for the bid-sheet values.
-  For a configurator where each choice must be applied before the next one appears, put every choice followed by
-  its apply button, in order, into the template, then the amounts, then the button that saves the position and
-  moves on. Code repeats it for each position the form asks for, in the form's own order. Do not enter positions
-  one by one with steps.
+- POSITIONS: enter the FIRST position the form asks for yourself, with "steps" actions, and read the result: learn
+  which choices exist (e.g. how the form names "no certificate") and which control SAVES a position and moves on to
+  the next one. A control that only adds another, empty line ("add position") does not save the one you filled;
+  pressing it can put the form out of step. Once the first position is saved and the form shows the next one,
+  enter ALL remaining positions with ONE enter_positions action (described below) whose template repeats exactly
+  the steps that worked, with placeholders for the values, ending with that saving control. Code repeats it for
+  each position the form asks for, in the form's own order.
 - A position is entered once. When the form saves it, it may list it, show a short confirmation and empty its
   fields for a further line: then go on with the control that moves to the next position or step, and do not
   enter the same position again.
@@ -423,6 +424,16 @@ async def submit_bid(tender_tab: Tab, mail_tab: Tab | None, bid: Bid, context: d
             result = await clerk._steps(steps, errors_only=True, limit=len(steps))
             if not result.startswith("ran all"):
                 report.append(f"position {position} stopped: {result[:700]}")
+                break
+            # Test run 10def205: the template's last press did not save the position, the form showed it again
+            # with empty fields, and it was counted as entered. A position still named in the form's heading after
+            # the last press was not saved.
+            after = await tender_tab.observe()
+            if heading_positions(after, [position]):
+                report.append(f"position {position} was NOT saved: after the template's last press the form still "
+                              f"shows position {position}. Read the page: fix what it reports, or press the control "
+                              "that saves this position and moves on (not one that adds another, empty line), and "
+                              "use that control as the template's last step")
                 break
             entered.append(position)
             todo.remove(position)

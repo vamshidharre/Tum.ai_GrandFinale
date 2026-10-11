@@ -96,6 +96,12 @@ def _thought(reply: str) -> str:
         text = reply
     return " ".join(text.split())[:200] or "(no thought)"
 NAVIGATING = {"click", "goto", "back", "reload", "login", "collect", "fetch", "steps"}
+REPEATABLE_NOT = {"fill", "select", "set", "enter_positions"}  # refused when repeated on an unchanged page (see run)
+BLOCKED = ("BLOCKED: you sent exactly these actions on this same page three times and they changed nothing, so they "
+           "were not run again. Do something different: read the page's messages and fix what they report. If the "
+           "form is out of step (fields empty again, an action \"not possible in this step\"), reload the page or go "
+           "back to the first choice of this position and redo it. To save a position use the control that moves on "
+           "to the next one, not one that adds another, empty line.")
 STEPS_LIMIT, STEPS_TIMEOUT = 30, 240  # one "steps" action: at most this many steps, and seconds in all
 ALERT = re.compile(r"\((?:alert|status)\)[^\n]*")  # a message the page announces to screen readers (Tab.observe)
 CONTROL = re.compile(r'\[(\d+)\] (?:\(in collapsed menu\) )?(select|input(?:\(\w+\))?|button|checkbox|radio|link|clickable|switch) "([^"]*)"([^\[]*)')
@@ -450,6 +456,11 @@ class Agent:
             repeats = repeats + 1 if signature == last_signature else max(0, seen_signatures[signature] - 1)
             last_signature = signature
 
+            # An agent that cannot be sent idle (the bid clerk) and sends exactly the same actions on the same page a
+            # third time gets them refused: test run 10def205 filled the same amounts and pressed the same button 40+
+            # times on an unchanged page, through hints and an escalated turn, until its step cap.
+            blocked = (self.idle is None and repeats >= 2
+                       and any(isinstance(a, dict) and a.get("do") in REPEATABLE_NOT for a in actions))
             results, finished, moved = [], None, False
             hard = False
             if self._circle_hint:  # shown with the results of this turn's actions, at the top of the next turn
@@ -463,6 +474,12 @@ class Agent:
                 if do == "done":
                     finished = action
                     break
+                if blocked and do not in ("reload", "wait", "back") and (do in NAVIGATING or do in REPEATABLE_NOT):
+                    results.append(BLOCKED)
+                    blocked = None  # said once per turn; the rest of the repeated actions are dropped silently
+                    continue
+                if blocked is None and (do in NAVIGATING or do in REPEATABLE_NOT):
+                    continue
                 if do == "wait":
                     await asyncio.sleep(2)
                     results.append("waited two seconds")

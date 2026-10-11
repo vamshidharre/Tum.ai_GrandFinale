@@ -368,3 +368,42 @@ class TeamWakeup(unittest.IsolatedAsyncioTestCase):
         case.pending, case.version = 0, 1  # the requirements extraction is done; the question was open before
         news = await asyncio.wait_for(hold, 2)
         self.assertIn("material:A-1", news or "")
+
+
+class RepeatedActionsAreRefused(unittest.IsolatedAsyncioTestCase):
+    """Test run 10def205: the bid clerk filled the same amounts and pressed the same button 40+ times on a page that
+    never changed, until its step cap. An agent without an idle hook gets such a repeat refused the third time."""
+
+    async def run_agent(self, idle=None):
+        tab = FakeTab(change_on_fill=False)
+        fills = []
+        original = tab.fill
+
+        async def fill(aid, text, enter=False):
+            fills.append(text)
+            return await original(aid, text, enter)
+
+        tab.fill = fill
+        same = {"thought": "fill it again", "actions": [{"do": "fill", "id": 1, "text": "29"}]}
+        replies = [same, same, same, same, {"thought": "other way", "actions": [{"do": "done", "summary": "x"}]}]
+        asked = []
+
+        async def model(messages, **kwargs):
+            asked.append(messages[-1]["content"])
+            return replies.pop(0)
+
+        with patch.object(llm, "chat_json", model):
+            await Agent("submit", tab, "system", lambda: "job", max_steps=6, idle=idle).run()
+        return fills, asked
+
+    async def test_the_third_identical_turn_is_not_run(self):
+        fills, asked = await self.run_agent()
+        self.assertEqual(fills, ["29", "29"])
+        self.assertIn("BLOCKED: you sent exactly these actions", asked[3])
+
+    async def test_an_agent_that_can_be_sent_idle_is_left_to_its_own_loop_rules(self):
+        async def idle(why):
+            return None
+
+        fills, _ = await self.run_agent(idle)
+        self.assertEqual(len(fills), 4)

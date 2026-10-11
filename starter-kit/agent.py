@@ -341,7 +341,9 @@ RELEASED: set[str] = set()
 # planning tab, file it; then every price condition; then every stock) and was the last to finish. Rule 10 of the
 # brief says sites and positions can be investigated in parallel, and tabs are not limited. By role: CREW_SIZE["erp"]
 # agents on the ERP, CREW_SIZE["mail"] on the webmail (1 turns it off).
-CREW_SIZE = {"erp": int(os.environ.get("ERP_AGENTS", "3")), "mail": int(os.environ.get("MAIL_AGENTS", "2"))}
+# Off by default: test run 10def205 (3 ERP + 2 mail agents) took 236 s and $0.31 for the investigation against 219 s
+# and $0.14 with one agent per site (a176359f): the agents redid each other's materials (154 ERP calls instead of 46).
+CREW_SIZE = {"erp": int(os.environ.get("ERP_AGENTS", "1")), "mail": int(os.environ.get("MAIL_AGENTS", "1"))}
 HELPER_MARK = "~"  # a helper agent is named "<site>~<n>"
 CREW: dict[str, list[str]] = {}  # site -> the names of its agents, the site's own first
 ASSIGNED: dict[str, str] = {}  # question group -> the agent of its site's crew that works on it
