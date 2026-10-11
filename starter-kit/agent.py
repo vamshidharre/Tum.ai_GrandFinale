@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import time
+from urllib.parse import parse_qsl, urlsplit
 
 from playwright.async_api import async_playwright
 
@@ -82,6 +83,9 @@ How to work
   to, for a link whose label already tells you it is a record you need. An address shown after "->" can be opened
   with goto, and several goto and keep can follow one another: [goto A, keep, goto B, keep] opens and files two
   records in one reply. A reply that only files a page, or only closes a question, wastes a turn.
+- PAGES OF THIS WEBSITE, when it heads your turn, lists addresses you and the other agents of your website have
+  opened in this run, one example per kind of page. To open the same kind of page for your own record, use goto with
+  that address and your value in place of the example's. Do not search again for a way that is already listed.
 - File pages that state the facts themselves (an opened document, record or message), not menus or hit lists.
   For a paged list or document that matters, use collect so that no page is missed, then keep it. For stock
   availability, drill down from plant/physical summaries into storage locations to view freely available
@@ -287,8 +291,13 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float, name: st
     def briefing() -> str:
         questions = questions_for_site(name, open_work(case))
         news = case.take_news(name)
+        title = re.search(r"^title: (.*)$", tab.document[:600], re.M)
+        saw_page(tab.site_id, tab.page.url, title.group(1) if title else "")
         text = f"CASE FILE\n{case.status()}\n\nOPEN QUESTIONS\n"
         text += "\n".join(f"- [{qid}] {question}" for qid, question in questions) or "(none)"
+        pages = known_pages(tab.site_id)
+        if pages:
+            text += "\n\nPAGES OF THIS WEBSITE (opened by its agents in this run; the values in them are examples)\n" + pages
         if news:
             text += "\n\nNEWS FROM YOUR FILED DOCUMENTS\n" + "\n".join(f"- {item}" for item in news)
         own_pending = case.pending_for(name)
@@ -302,6 +311,7 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float, name: st
 
     async def keep(action: dict) -> str:
         document, source = agent.document()
+        saw_page(tab.site_id, source)  # also a page opened and filed within one reply
         res = case.file(str(action.get("kind", "")), document, source, name)
         if res.startswith("this document is already filed"):
             res += "; do not file this same page again — check OPEN QUESTIONS for what is missing on another page, or finish with done"
@@ -355,7 +365,7 @@ POOL_SIZE = {"erp": int(os.environ.get("ERP_TABS", "5")), "mail": int(os.environ
 POOLS: dict[str, list[str]] = {}
 CLAIMS: dict[str, str] = {}
 LOOKING_AT: dict = {}
-ERP_KINDS = ("material:", "data:")
+ERP_KINDS = ("material:", "data:", "explore:")
 MAIL_KINDS = ("condition_group:", "packaging_tariff:", "delivery_commitment:", "setup_pool:", "project_bonus:",
               "index:", "fx:", "reserve:", "topic:")
 # One mail message defines every key of its kind, so all questions about a kind are one share of work.
@@ -364,10 +374,62 @@ MAIL_SHARE = {"condition_group": "condition_rules", "packaging_tariff": "packagi
               "index": "price_indices", "fx": "fx_fixing", "reserve": "tech_release"}
 
 
+# What the agents of a website have opened in this run: website -> kind of page -> (an address of it, its title).
+# An agent that starts on a website others already know does not look for the search, a record's views or its stock
+# and price pages again (local run: each of four ERP agents spent its first five turns finding the same search).
+SITE_PAGES: dict[str, dict[str, tuple[str, str]]] = {}
+PAGES_SHOWN = 16
+# While the ERP has no question yet (they come from the specification, read on another website), its first agent
+# looks around instead of waiting, so that the addresses are known when the materials are. Over for good once the
+# first ERP question is open.
+LOOKED_AROUND: set[str] = set()
+LOOK_AROUND = ("While the requirements are still being read on another website, get to know this one, so that you and "
+               "the agents who share it can open its pages directly later. Find the search for materials (a search "
+               "that lists a few will do), open one material and look at each of its views (master data, technical "
+               "data, status and planning), its stock down to the freely available quantity per storage location, "
+               "and its price conditions with their quantity scales. File nothing and answer nothing. Finish with "
+               "done as soon as you have seen each kind of page once.")
+
+
+def page_kind(url: str) -> tuple[str, str] | None:
+    """What kind of page an address is (its path, the names of its parameters, and the values that are plain words:
+    a tab, a view, a folder) and the address without its host. None for a page that only leads on to another one
+    (a login or a consent page carries the address to return to)."""
+    parts = urlsplit(url)
+    if not parts.netloc or parts.scheme not in ("http", "https"):
+        return None
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    if any(value.startswith(("/", "http")) for _, value in query):
+        return None
+    kind = parts.path + "?" + "&".join(sorted(f"{name}={value}" if value.isalpha() else name for name, value in query))
+    return kind, parts.path + ("?" + parts.query if parts.query else "")
+
+
+def saw_page(site: str, url: str, title: str = "") -> None:
+    found = page_kind(url)
+    if found:
+        pages = SITE_PAGES.setdefault(site, {})
+        pages.pop(found[0], None)  # the latest example of a kind, and the kinds in the order they were last seen
+        pages[found[0]] = (found[1], " ".join(title.split())[:60])
+
+
+def known_pages(site: str) -> str:
+    pages = list(SITE_PAGES.get(site, {}).values())[-PAGES_SHOWN:]
+    return "\n".join(f"- {address}" + (f"  ({title})" if title else "") for address, title in pages)
+
+
 def open_work(case) -> list[tuple[str, str]]:
-    """What the agents are shown: the open questions, and the mail records that can be fetched ahead of them."""
+    """What the agents are shown: the open questions, the mail records that can be fetched ahead of them, and for
+    an ERP without a question yet a look around."""
     ahead = getattr(case, "prefetch", None)
-    return case.questions() + (ahead() if ahead else [])
+    questions = case.questions()
+    work = questions + (ahead() if ahead else [])
+    if POOLS.get("erp") and "erp" not in LOOKED_AROUND:
+        if any(qid.startswith(("material:", "data:")) for qid, _ in questions):
+            LOOKED_AROUND.add("erp")
+        else:
+            work.append(("explore:erp", LOOK_AROUND))
+    return work
 
 
 def site_of(name: str) -> str:
@@ -402,7 +464,11 @@ def share_out(role: str, qids: list[str]) -> None:
             continue
         key = share.split(":", 1)[-1]
         near = [name for name in pool if key and key in (LOOKING_AT[name]() if name in LOOKING_AT else "")]
-        owner = min(near or pool, key=lambda name: (load[name], pool.index(name)))
+        # Among equals the website's further agents come first, its first agent last: that one has looked around
+        # and carries the longest history, and with one share fewer it is free for the questions that come later.
+        owner = min(near or pool, key=lambda name: (load[name], name == pool[0], pool.index(name)))
+        if share.startswith("explore:"):
+            owner = pool[0]  # the look around is the first agent's: the others make no call before real work
         CLAIMS[share] = owner
         load[owner] += 1
 
@@ -512,13 +578,20 @@ async def solve(task: dict, playwright) -> dict | None:
     except BaseException:
         reading.cancel()
         raise
-    await asyncio.gather(*(arrive(tab) for name, tab in tabs.items() if not only or name in only))
+    arriving = [asyncio.ensure_future(arrive(tab)) for name, tab in tabs.items() if not only or name in only]
     context = await reading
+    if arriving:  # a website slow to open must not hold the others up: its agent opens it itself (run b7dcf384: 16 s)
+        _, late = await asyncio.wait(arriving, timeout=2)
+        for task in late:
+            task.cancel()
+        await asyncio.gather(*late, return_exceptions=True)
     SITE_ROLES.clear()
     RELEASED.clear()
     POOLS.clear()
     CLAIMS.clear()
     LOOKING_AT.clear()
+    SITE_PAGES.clear()
+    LOOKED_AROUND.clear()
     SITE_ROLES.update({role: str(context.get(f"{role}_site") or "") for role in ("erp", "mail")
                        if str(context.get(f"{role}_site") or "") in {site["siteId"] for site in sites}})
     case = CaseFile(brief, context)

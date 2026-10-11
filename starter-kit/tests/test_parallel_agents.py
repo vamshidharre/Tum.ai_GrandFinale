@@ -29,6 +29,8 @@ def reset():
     agent.POOLS.clear()
     agent.CLAIMS.clear()
     agent.LOOKING_AT.clear()
+    agent.SITE_PAGES.clear()
+    agent.LOOKED_AROUND.clear()
 
 
 class SharedWebsite(unittest.TestCase):
@@ -38,7 +40,8 @@ class SharedWebsite(unittest.TestCase):
         agent.POOLS["erp"] = ["erp", "erp#2", "erp#3"]
         questions = [(f"material:REQ-{n}", "m") for n in (1, 2, 3)] + [("discount", "d")]
         seen = {name: [q for q, _ in questions_for_site(name, questions)] for name in agent.POOLS["erp"]}
-        self.assertEqual(seen, {"erp": ["material:REQ-1"], "erp#2": ["material:REQ-2"], "erp#3": ["material:REQ-3"]})
+        # the further agents first, the website's first agent (the one that looked around) last
+        self.assertEqual(seen, {"erp": ["material:REQ-3"], "erp#2": ["material:REQ-1"], "erp#3": ["material:REQ-2"]})
         # asked again in another order, every agent still has the share it took
         again = {name: [q for q, _ in questions_for_site(name, questions[::-1])] for name in agent.POOLS["erp"]}
         self.assertEqual(again, seen)
@@ -55,13 +58,13 @@ class SharedWebsite(unittest.TestCase):
         self.assertNotEqual(work_share("index:M-1"), work_share("fx:F-1"))
         agent.POOLS["mail"] = ["mail", "mail#2"]
         questions = [("topic:condition_rules", "t"), ("topic:fx_fixing", "t"), ("condition_group:K-1", "c"), ("fx:F-1", "f")]
-        self.assertEqual([q for q, _ in questions_for_site("mail", questions)], ["topic:condition_rules", "condition_group:K-1"])
-        self.assertEqual([q for q, _ in questions_for_site("mail#2", questions)], ["topic:fx_fixing", "fx:F-1"])
+        self.assertEqual([q for q, _ in questions_for_site("mail#2", questions)], ["topic:condition_rules", "condition_group:K-1"])
+        self.assertEqual([q for q, _ in questions_for_site("mail", questions)], ["topic:fx_fixing", "fx:F-1"])
 
     def test_the_share_of_an_agent_that_ended_goes_to_the_others(self):
         agent.POOLS["erp"] = ["erp", "erp#2"]
         questions = [("material:REQ-1", "m"), ("material:REQ-2", "m")]
-        self.assertEqual([q for q, _ in questions_for_site("erp#2", questions)], ["material:REQ-2"])
+        self.assertEqual([q for q, _ in questions_for_site("erp#2", questions)], ["material:REQ-1"])
         agent.retire("erp#2")
         self.assertEqual([q for q, _ in questions_for_site("erp", questions)], ["material:REQ-1", "material:REQ-2"])
 
@@ -71,6 +74,36 @@ class SharedWebsite(unittest.TestCase):
         self.assertEqual([q for q, _ in questions_for_site("portal", questions)], ["positions"])
         agent.RELEASED.add("material:REQ-1")  # the ERP agents gave it up: now everyone is asked
         self.assertEqual([q for q, _ in questions_for_site("portal", questions)], ["positions", "material:REQ-1"])
+
+
+class KnownPages(unittest.TestCase):
+    """What one agent of a website found, the others open directly."""
+    setUp = tearDown = staticmethod(reset)
+
+    def test_one_example_is_kept_per_kind_of_page(self):
+        agent.saw_page("stock", "https://stock.test/item?no=MAT-1&view=technical", "Item MAT-1")
+        agent.saw_page("stock", "https://stock.test/item?no=MAT-2&view=planning", "Item MAT-2")
+        agent.saw_page("stock", "https://stock.test/item?no=MAT-3&view=technical", "Item MAT-3")  # the same kind again
+        agent.saw_page("stock", "https://stock.test/find?q=GRP-9", "Search")
+        self.assertEqual(agent.known_pages("stock"),
+                         "- /item?no=MAT-2&view=planning  (Item MAT-2)\n- /item?no=MAT-3&view=technical  (Item MAT-3)\n"
+                         "- /find?q=GRP-9  (Search)")
+        self.assertEqual(agent.known_pages("post"), "")  # another website has pages of its own
+
+    def test_a_page_that_only_leads_on_is_not_listed(self):
+        agent.saw_page("stock", "https://stock.test/login?back=%2Fitem%3Fno%3DMAT-1", "Login")
+        agent.saw_page("stock", "about:blank")
+        self.assertEqual(agent.known_pages("stock"), "")
+
+    def test_the_erp_agent_looks_around_until_its_first_question_is_open(self):
+        case = SimpleNamespace(questions=lambda: list(case.open), open=[("positions", "p")])
+        agent.POOLS["erp"] = ["erp", "erp#2"]
+        self.assertEqual([q for q, _ in questions_for_site("erp", agent.open_work(case))], ["explore:erp"])
+        self.assertEqual(questions_for_site("erp#2", agent.open_work(case)), [])  # one agent looks around, not all
+        case.open.append(("material:REQ-1", "m"))
+        self.assertNotIn("explore:erp", [q for q, _ in agent.open_work(case)])
+        case.open.remove(("material:REQ-1", "m"))
+        self.assertNotIn("explore:erp", [q for q, _ in agent.open_work(case)])  # over for good
 
 
 class FetchedAhead(unittest.TestCase):
@@ -127,10 +160,10 @@ class Investigation(unittest.IsolatedAsyncioTestCase):
         waiting = asyncio.create_task(team.wait_for_work("erp#2"))
         await asyncio.sleep(0.05)
         self.assertFalse(waiting.done())
-        case.open, case.version = [("material:REQ-1", "m")], 1  # one share: it goes to the website's first agent
+        case.open, case.version = [("discount", "d")], 1  # a question for another website: still nothing for it
         await asyncio.sleep(0.05)
         self.assertFalse(waiting.done())
-        case.open, case.version = case.open + [("material:REQ-2", "m")], 2
+        case.open, case.version = case.open + [("material:REQ-1", "m")], 2
         self.assertTrue(await asyncio.wait_for(waiting, 2))
 
     async def test_an_agent_without_work_is_held_before_the_model_is_asked(self):

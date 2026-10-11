@@ -342,7 +342,7 @@ class Agent:
                 except Exception as error:  # noqa: BLE001  the agent deals with the page as it is
                     results.append(f"waiting at the website's entrance failed: {str(error)[:120]}")
             try:
-                page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+                page = await asyncio.wait_for(getattr(self.tab, "glance", self.tab.observe)(), STEP_TIMEOUT)
             except asyncio.TimeoutError:
                 stuck += 1
                 page = f"(the page did not finish loading within {STEP_TIMEOUT} s; reload it or go elsewhere)"

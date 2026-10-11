@@ -438,6 +438,7 @@ class Tab:
         self.loading: set = set()  # page, frame and data requests that have not come back yet
         self.spares: list = []  # browser contexts of the run's other browsers, for a renewal elsewhere (see renew)
         self.renewals = 0
+        self._seen = (0.0, "", "")  # when the page was last read for the agent, its address then, and the text
         self._watch(page)
 
     @property
@@ -637,7 +638,17 @@ class Tab:
         text = await self.read()
         if len(text) > MAX_OBSERVATION:
             text = text[:MAX_OBSERVATION] + f"\n… (page text cut here; {len(text) - MAX_OBSERVATION} more characters. `keep` files the whole page.)"
+        self._seen = (asyncio.get_running_loop().time(), self.page.url, text)
         return text
+
+    async def glance(self) -> str:
+        """The page for the start of a turn. A turn begins right after the read that checked the last action, so
+        that text, with its element ids, is used again when it is a moment old and nothing has loaded since;
+        otherwise the page is read. Reading it twice in a row cost every turn of every agent 0.3 s."""
+        at, url, text = self._seen
+        if text and asyncio.get_running_loop().time() - at < 0.15 and url == self.page.url and not self.loading:
+            return text
+        return await self.observe()
 
     def take_events(self) -> list[str]:
         events, self.events = self.events, []
