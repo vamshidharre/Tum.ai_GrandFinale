@@ -1,0 +1,6 @@
+<pasted_content id="ab03">
+the same code now took more than 12 mins : "D:\Personal_Projects\QuoteCraft-tier1\logss.jsonl"
+
+
+Can you check it, what is happening and how can we make it robust? Just give me your analyse.
+</pasted_content id="ab03">
