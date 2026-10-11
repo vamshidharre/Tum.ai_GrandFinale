@@ -144,11 +144,16 @@ class Agent:
                  extra: dict[str, Callable[[dict], Awaitable[str]]] | None = None, deadline: float | None = None,
                  max_steps: int = 80, think: bool = False,
                  idle: Callable[[str], Awaitable[str | None]] | None = None,
-                 guard: Callable[[dict], str | None] | None = None, finish_on_repeat: int | None = None, circle_hint: str | None = None):
+                 guard: Callable[[dict], str | None] | None = None, finish_on_repeat: int | None = None, circle_hint: str | None = None,
+                 finished_here: Callable[[], bool] | None = None):
         """`briefing()` heads every turn. `extra` adds actions: name -> handler(action) -> result text.
         `idle("done")` lets the caller hold a finished agent until there is news for it (returns the news) or
         let it stop (returns None)."""
         self.name, self.tab, self.system, self.briefing = name, tab, system, briefing
+        # True when the agent's own work is done (agent.py: a routed agent with no open question left). It then goes
+        # idle without another model turn; run 2e081b8d: the mail agent spent 4 turns (~30 s) "checking for anything
+        # missed" after its last question was closed, and the investigation waited for it.
+        self.finished_here = finished_here
         self.extra = extra or {}
         self.deadline = deadline or time.time() + 3600
         self.max_steps, self.think, self.idle = max_steps, think, idle
@@ -357,6 +362,15 @@ class Agent:
         seen_signatures: dict[str, int] = {}
         stuck = 0  # page reads and navigations in a row that timed out or failed: the tab may be broken
         while self.steps < self.max_steps and time.time() < self.deadline:
+            if self.finished_here is not None and self.idle is not None and self.finished_here():
+                self.log("nothing left for this website: idle without another model turn")
+                self.briefing()  # takes the news meant for it, so the idle hold waits for new questions instead
+                news = await self.idle("done")
+                if news is None:
+                    outcome.update(done=True, summary=outcome["summary"] or "nothing left for this website")
+                    break
+                results.append(news)
+                continue
             self.steps += 1
             clock = time.time()
             try:

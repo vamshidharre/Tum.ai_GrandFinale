@@ -109,7 +109,7 @@ Round 3 worked at the start (agents begin at 0:03, already logged in; mail used 
 |---|---|---|---|---|---|
 | run_665adb0e (SCORED, sub_5e116351) | **round 3** (started 09:04 UTC, before round 4 at 09:09) | 100 | **4:50** | $0.223 | first run under 5 min; cost up: supplier portal 40 calls/472k tokens (looped pages 1-4 for a mail record), ERP 49/566k (stock and prices by hand), tender 18/251k (9 "done" wake-ups) — all three targeted by round 4 |
 | run_ab00e578 (test) | rounds 4 + 5 | – | ~7:00 | investigation $0.136 (was $0.200) | tender 10 turns (was 18), supplier portal 12 (was 40), enter_positions entered 4 positions in one turn; BUT investigation 302 s: ERP 53 turns because 3 of 4 file_each filed no stock/price page (label shown twice; a maintenance notice in front of a record) and the model redid them by hand; model slower (2.9 s/call) |
-| (to fill) | round 6 | | | | |
+| run_2e081b8d (test) | round 6 | – | **>6:00** | investigation $0.148 | investigation 280 s. ERP batch got through (35 turns, done 4:27), but it was idle until 1:31 waiting for the requirements (sites slow at start: supplier portal opened 22 s late). The **mail agent was the long pole: 50 turns, 607k input tokens (41% of the run), done last at 4:40**, searching one topic at a time and opening each message by hand, plus 4 model turns after all its questions were already closed. Clerk enter_positions: 4 positions in ~28 s (works) |
 
 ## 7. Round 5 — cost: no repeated briefing in the history
 
@@ -128,3 +128,19 @@ Expected with rounds 4 + 5 on top of 665adb0e: about 4:15-4:45 and **$0.12-0.15*
 | file_each waits 3 s (was 10 s) for its pages to be read | 4 × 10 s of ERP time when the model was slow | agent.py |
 
 Expected: ERP ~20 turns instead of 53 → investigation ~120-160 s; total ~3:30-4:15.
+
+## 9. Round 7 — cut the mail agent's turns and the turns after the work is done (from run 2e081b8d)
+
+| # | Seen in the log | Change | Files |
+|---|---|---|---|
+| A | Mail agent made 4 more model turns after its last question was closed; each turn re-sends ~12k tokens | A routed agent (ERP or mail) that has filed something, has nothing of its own still being read and has no open question for its website goes idle **by code**, without a model turn. It still wakes for new or released questions | worker.py (`finished_here`), agent.py |
+| B | Mail agent: 50 turns, one search and one hand-opened message per topic (search, unlock list, open, unlock text, file) | Mail briefing (3+ open questions) asks for one broad reference search per folder, unlock the list once, then ONE file_each over the records with the "original text" control as a path | agent.py (MAIL_BATCH) |
+| C | ERP's first record was filed only partly before the batch, so the batch could not repeat stock/price chains | ERP hint: work ONE record ALL the way (status, technical, stock down to free quantity, price scales) before the batch | agent.py (RECORD_BATCH) |
+
+Not changed: quality-relevant logic (RFQ reading, calculator, discount/price rules, reconciliation, pre-submit checks).
+
+Expected: mail ~15-20 turns instead of 50 → investigation ~150-200 s, cost about -30%; total ~4:00-4:45.
+
+| Run | Package | Quality | Time | Cost | Notes |
+|---|---|---|---|---|---|
+| (to fill) | round 7 | | | | |

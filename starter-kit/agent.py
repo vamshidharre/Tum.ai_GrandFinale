@@ -173,8 +173,10 @@ FILE_EACH_SECONDS = 150  # and seconds for all of them; the agent continues from
 # #1: the ERP agent worked every record by hand, one click per model turn: 46 turns in run a176359f, 92 in 20e3c020
 # (search, open, a tab, file; then each price view; then each stock breakdown). file_each lets code open and file
 # the records the model names, with the tabs and paths it learned on the first one; it was never used.
-RECORD_BATCH = ("SAVE TURNS: {count} record questions are open on your website. Work ONE candidate record by hand "
-                "and note every control you clicked from the record page to reach each page you filed. From then on "
+RECORD_BATCH = ("SAVE TURNS: {count} record questions are open on your website. Work ONE candidate record by hand, "
+                "ALL the way: its status and technical views, its stock down to the freely available quantity, and its "
+                "price conditions with their quantity scales; note every control you clicked from the record page to "
+                "reach each page you filed. From then on "
                 "file every further candidate of a result list with ONE file_each that repeats ALL of them, not only "
                 "the plain tabs: a tab is {{\"tab\": \"<label>\", \"kind\": \"material\"}}, and a chain of clicks "
                 "(for example down into a stock breakdown to the free stock, or into a price-scale view) is "
@@ -183,6 +185,14 @@ RECORD_BATCH = ("SAVE TURNS: {count} record questions are open on your website. 
                 "record, follows every tab and path, files each page and comes back to the list; do not drill into "
                 "stock or prices by hand again. Filed pages are read within seconds: wait for their facts in the "
                 "case file instead of opening them again.")
+# Run 2e081b8d: the mail agent needed 50 turns (607k input tokens, 41% of the run) and finished last, searching one
+# topic at a time and opening each message by hand (search, unlock the list, open, unlock the text, file), while
+# in run 665adb0e one broad search per folder and file_each over its list filed several records per turn.
+MAIL_BATCH = ("SAVE TURNS: {count} questions are open on your mailbox. Search a folder (inbox, then archive) for the "
+              "tender reference so that the list shows several of its records at once, unlock the list once, then "
+              "file every record of that list you need with ONE file_each (their links, plus the tab or control that "
+              "shows a message's full original text as a path, kind \"mail\"). Code opens and files them and comes "
+              "back to the list; do not open them one by one. Search a topic on its own only for what is still open.")
 BATCH_NUDGE_AFTER = 3  # same-kind pages filed one by one before file_each is suggested once
 FILED_READ_WAIT = 3  # seconds file_each waits for the pages it filed to be read (10 s cost up to 40 s of ERP time when
 # the model was slow, run ab00e578; the result now also says not to open them again)
@@ -351,6 +361,8 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
         news = case.take_news(name)
         text = f"CASE FILE\n{case.status()}\n\nOPEN QUESTIONS\n"
         text += "\n".join(f"- [{qid}] {question}" for qid, question in questions) or "(none)"
+        if site_role(name) == "mail" and len(questions) >= 3:
+            text += "\n\n" + MAIL_BATCH.format(count=len(questions))
         records = [qid for qid, _ in questions if qid.startswith(("material:", "data:"))]
         if site_role(name) == "erp" and len(records) >= 2:
             text += "\n\n" + RECORD_BATCH.format(count=len(records))
@@ -365,11 +377,19 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
 
     agent: Agent
     batched: dict = {}  # kind -> consecutive one-by-one filings, for the file_each nudge (#1)
+    worked = [False]  # has filed something: from then on it may go idle by code once its questions are answered
+
+    def finished_here() -> bool:
+        """A routed (ERP or mail) agent that has worked and whose website has no open question left and nothing of
+        its own still being read: its work is done (its questions are exactly its website's, so nothing is missed)."""
+        return (site_role(name) is not None and worked[0] and not case.pending_for(name)
+                and not questions_for_site(name, case.questions()))
 
     async def keep(action: dict) -> str:
         kind = str(action.get("kind", ""))
         document, source = agent.document()
         res = case.file(kind, document, source, name)
+        worked[0] = worked[0] or res.startswith("filed")
         if res.startswith("this document is already filed"):
             res += "; do not file this same page again — check OPEN QUESTIONS for what is missing on another page, or finish with done"
         else:
@@ -387,6 +407,7 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
     async def file_each_action(action: dict) -> str:
         said = await file_each(tab, action, lambda kind, text, source: case.file(kind, text, source, name),
                                agent.coverage.saw, deadline, agent.page_seen)
+        worked[0] = worked[0] or "filed" in said
         # The pages it filed are read in a few seconds. Round-3 run: the ERP agent took a status still being read
         # for "did not parse" and opened the same pages again (3 extra turns); its next turn now sees the facts.
         until = min(deadline, time.time() + FILED_READ_WAIT)
@@ -411,6 +432,7 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
     # Navigation runs without the model's thinking: about twice as fast. The facts themselves are read by the
     # extraction calls in casefile.py, which keep thinking on. AGENT_THINK=1 turns it back on for comparison.
     agent = Agent(name, tab, system, briefing, extra={"keep": keep, "file_each": file_each_action, "answer": answer}, deadline=deadline,
+                  finished_here=finished_here,
                   max_steps=int(os.environ.get("AGENT_MAX_STEPS", "150")), idle=team.hook(name),
                   think=os.environ.get("AGENT_THINK") == "1",
                   circle_hint="You are going in circles: the same thought keeps coming back without progress. If a "
