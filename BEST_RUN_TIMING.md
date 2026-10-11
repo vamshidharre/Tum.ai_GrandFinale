@@ -94,3 +94,17 @@ slow inside each turn. Allowed by the fair-play rules: code fills forms, logs in
 | Run | Package | Quality | Time | Cost | Notes |
 |---|---|---|---|---|---|
 | (to fill) | round 3 | | | | |
+
+## 6. Round 4 — from the round-3 run's live log (pasted 11 Oct)
+
+Round 3 worked at the start (agents begin at 0:03, already logged in; mail used file_each). Still wasted:
+
+| # | Seen in the log | Change | Files |
+|---|---|---|---|
+| A | ERP used file_each for two tabs only, then did stock (3 clicks) and prices (2 clicks) by hand for every material (~6 turns each) | ERP hint now asks to repeat ALL clicks of the first record in one file_each, with the stock and price chains as `path`s, and shows the exact shape | agent.py (RECORD_BATCH) |
+| B | Supplier-portal agent searched its documents ~25 turns for a mail record; tender agent woken 6x by new ERP questions only to say done | Agents other than ERP/mail no longer see the ERP's and mailbox's questions while the run has such agents, until one is released to all | agent.py (questions_for_site) |
+| C | ERP re-opened pages it had just filed ("status did not parse") because their facts were still being read | file_each waits up to 10 s for its own filed pages to be read before the agent's next turn | agent.py (file_each_action) |
+
+| Run | Package | Quality | Time | Cost | Notes |
+|---|---|---|---|---|---|
+| (to fill) | round 4 | | | | |

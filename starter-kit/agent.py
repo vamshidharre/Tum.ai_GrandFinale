@@ -172,11 +172,17 @@ FILE_EACH_SECONDS = 150  # and seconds for all of them; the agent continues from
 # (search, open, a tab, file; then each price view; then each stock breakdown). file_each lets code open and file
 # the records the model names, with the tabs and paths it learned on the first one; it was never used.
 RECORD_BATCH = ("SAVE TURNS: {count} record questions are open on your website. Work ONE candidate record by hand "
-                "and see which of its tabs, and which chain of controls (for example down into a stock breakdown, or "
-                "into a price-scale view), hold the facts the questions ask for. Then file the other candidates of a "
-                "result list with ONE file_each: their links, plus those tabs and paths, each with its kind. Code "
-                "opens and files every record and comes back to the list; do not open them one by one.")
+                "and note every control you clicked from the record page to reach each page you filed. From then on "
+                "file every further candidate of a result list with ONE file_each that repeats ALL of them, not only "
+                "the plain tabs: a tab is {{\"tab\": \"<label>\", \"kind\": \"material\"}}, and a chain of clicks "
+                "(for example down into a stock breakdown to the free stock, or into a price-scale view) is "
+                "{{\"path\": [\"<label 1>\", \"<label 2>\", \"<label 3>\"], \"kind\": \"material\" or "
+                "\"price_conditions\"}}, using the labels exactly as the record pages show them. Code opens every "
+                "record, follows every tab and path, files each page and comes back to the list; do not drill into "
+                "stock or prices by hand again. Filed pages are read within seconds: wait for their facts in the "
+                "case file instead of opening them again.")
 BATCH_NUDGE_AFTER = 3  # same-kind pages filed one by one before file_each is suggested once
+FILED_READ_WAIT = 10  # seconds file_each waits for the pages it filed to be read before the agent's next turn
 
 
 def batch_hint(counter: dict, kind: str, filed: bool) -> str:
@@ -312,8 +318,16 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
         return res
 
     async def file_each_action(action: dict) -> str:
-        return await file_each(tab, action, lambda kind, text, source: case.file(kind, text, source, name),
+        said = await file_each(tab, action, lambda kind, text, source: case.file(kind, text, source, name),
                                agent.coverage.saw, deadline, agent.page_seen)
+        # The pages it filed are read in a few seconds. Round-3 run: the ERP agent took a status still being read
+        # for "did not parse" and opened the same pages again (3 extra turns); its next turn now sees the facts.
+        until = min(deadline, time.time() + FILED_READ_WAIT)
+        while case.pending_for(name) and time.time() < until:
+            await case.wait_change(case.version, min(1.0, max(0.0, until - time.time())))
+        return said + ("\nThe filed pages have been read: their facts are in the case file above."
+                       if not case.pending_for(name) else
+                       "\nSome filed pages are still being read; their facts follow as news. Do not open them again.")
 
     async def answer(action: dict) -> str:
         # A completion action can arrive in the same turn as `keep`. Wait for this agent's own
@@ -371,14 +385,25 @@ def questions_for_site(site_id: str, questions: list[tuple[str, str]]) -> list[t
         return site == named if named else role in site
 
     if plays("erp"):
-        prefixes = ("material:", "data:")
-        return [(qid, text) for qid, text in questions if qid.startswith(prefixes) or qid in RELEASED]
+        return [(qid, text) for qid, text in questions if _erp_question(qid) or qid in RELEASED]
     if plays("mail"):
-        prefixes = ("condition_group:", "packaging_tariff:", "delivery_commitment:", "setup_pool:",
-                    "project_bonus:", "index:", "fx:", "reserve:")
-        return [(qid, text) for qid, text in questions
-                if qid in ("mailbox", "discount") or qid.startswith(prefixes) or qid in RELEASED]
-    return questions
+        return [(qid, text) for qid, text in questions if _mail_question(qid) or qid in RELEASED]
+    # Every other agent leaves the ERP's and the mailbox's questions to them while this run has such an agent, until
+    # one is left open and RELEASED to all. Round-3 run: the supplier-portal agent searched its own documents for a
+    # mail record for ~25 turns, and the tender agent was woken six times by new ERP questions only to say done.
+    return [(qid, text) for qid, text in questions
+            if qid in RELEASED or not ((SITE_ROLES.get("erp") and _erp_question(qid))
+                                       or (SITE_ROLES.get("mail") and _mail_question(qid)))]
+
+
+def _erp_question(qid: str) -> bool:
+    return qid.startswith(("material:", "data:"))
+
+
+def _mail_question(qid: str) -> bool:
+    return qid in ("mailbox", "discount") or qid.startswith(
+        ("condition_group:", "packaging_tariff:", "delivery_commitment:", "setup_pool:", "project_bonus:", "index:",
+         "fx:", "reserve:"))
 
 
 async def open_tabs(playwright, sites: list[dict]) -> tuple[list, dict[str, Tab]]:

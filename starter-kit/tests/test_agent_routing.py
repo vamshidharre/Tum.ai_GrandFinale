@@ -67,8 +67,12 @@ class QuestionRouting(unittest.IsolatedAsyncioTestCase):
             agent.SITE_ROLES.update({"erp": "warenwirtschaft", "mail": "postfach"})
             self.assertEqual([q for q, _ in questions_for_site("warenwirtschaft", questions)], ["material:REQ-1"])
             self.assertEqual([q for q, _ in questions_for_site("postfach", questions)], ["discount", "reserve:REQ-2"])
-            # a site that merely contains "mail" in its name but is not the mailbox gets everything
-            self.assertEqual(questions_for_site("mailing-list-portal", questions), questions)
+            # a site that merely contains "mail" in its name but is not the mailbox is not routed as one; it leaves
+            # the ERP's and the mailbox's questions to them (round-3 run: ~25 turns searching for a mail record)
+            self.assertEqual(questions_for_site("mailing-list-portal", questions), [("positions", "p")])
+            agent.RELEASED.add("reserve:REQ-2")  # left open by the mailbox agent: offered to every agent
+            self.assertEqual([q for q, _ in questions_for_site("mailing-list-portal", questions)],
+                             ["positions", "reserve:REQ-2"])
         finally:
             agent.SITE_ROLES.clear()
 
