@@ -30,6 +30,9 @@ from casefile import SHAPES, CaseFile, read_context
 from worker import ACTIONS_HELP, CONTROL, Agent, find_control
 
 RESTART_MIN_SECONDS = 120  # an unfinished agent is restarted only while this much investigation time is left
+# News about an agent's own filed document that needs it back at work (casefile._extract's wording): a failed or
+# empty extraction, a conflict with an earlier document, values left out. Other news waits for its next turn.
+NEEDS_ATTENTION = re.compile(r"fail|no usable|conflict|again|left out|not found|could not|invalid", re.I)
 
 INVESTIGATOR = """You are one of several research agents preparing a tender bid for a manufacturer's sales
 engineering team. Each agent works a different website at the same time; you work the website "{site}" at {url}
@@ -144,7 +147,10 @@ class Team:
                         self.release(name, before)
                         version = self.case.version
                         fresh = {qid for qid, _ in questions_for_site(name, self.case.questions())} - before
-                        if fresh or self.case.news.get(name):
+                        # Fix #2: a routine "your document was read" notice does not wake an idle agent for another
+                        # model turn (run 99f03f3f: the tender agent was woken 6 times only to say done again); new
+                        # questions and notices that report a problem with its documents still do.
+                        if fresh or any(NEEDS_ATTENTION.search(item) for item in self.case.news.get(name) or []):
                             return "The case file has news" + (f"; new open questions: {', '.join(sorted(fresh))}" if fresh else "") + "."
                         still_open = {qid for qid, _ in questions_for_site(name, self.case.questions())}
                         rested = time.time() - self.woken.get(name, 0.0) >= 30
@@ -260,10 +266,19 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
     agent: Agent
 
     async def keep(action: dict) -> str:
+        kind = str(action.get("kind", ""))
         document, source = agent.document()
-        res = case.file(str(action.get("kind", "")), document, source, name)
+        res = case.file(kind, document, source, name)
         if res.startswith("this document is already filed"):
             res += "; do not file this same page again — check OPEN QUESTIONS for what is missing on another page, or finish with done"
+        # Fix #2: the bidder Q&A filed as a list that `collect` followed to its own end (over more than one page) is
+        # the whole Q&A, so its question closes by itself once it is read (casefile.CaseFile.listed_in_full)
+        # instead of keeping the agent browsing until it closes it (run a176359f: 41 s of re-opened documents).
+        run = getattr(tab, "last_collect", None)
+        if (kind == "clarifications" and res.startswith("filed") and agent.held_by == "collect" and run
+                and not run.get("capped") and run.get("pages", 0) >= 2):
+            case.listed_in_full["clarifications"] = name
+            res += "; this is the Q&A list followed to its end, so the clarifications question closes once it is read"
         return res
 
     async def file_each_action(action: dict) -> str:

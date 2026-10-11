@@ -60,7 +60,20 @@ Reading the page:
   after a session expires, log in again. Surveys, tools and help pages lead away from your task.
 """
 
-STEP_TIMEOUT = 45  # seconds for one page read or one browser action: a hung page must not freeze the whole run
+# Fix #1 (BEST_RUN_TIMING.md): in run a176359f one flaky tender-portal login cost 128 s (a 78 s click, then a 45 s
+# page read, then a failed reload) while a fresh tab loaded at once. A page that cannot be read in READ_TIMEOUT is a
+# broken tab, not a slow one: it is replaced at once (Agent._renew).
+READ_TIMEOUT = 15  # seconds for one page read (normally 0.3 s)
+STEP_TIMEOUT = 20  # seconds for one browser action (a click or goto includes its page load, at most 15 s)
+COLLECT_TIMEOUT = 75  # collect follows a list page by page and fetch downloads a file: more than one page load
+RENEW_TIMEOUT = 35  # a fresh tab: open it, load the site, and log in again when it moves to another browser
+# Signs in an action's result that the tab itself is broken (not a slow page): a fresh tab at the first one.
+HARD_FAILURE = ("detached", "ERR_ABORTED", "Target closed", "Target page", "has been closed")
+# An announcement after a press that reports a problem rather than a confirmation (Fix #3: enter_positions keeps
+# going past "saved" notices and stops at these).
+ERROR_ALERT = re.compile(r"fehler|ungültig|unzulässig|nicht möglich|nicht erlaubt|pflicht|erforderlich|fehlt|bitte "
+                         r"(?:eine|einen|ein|geben|wählen)|error|invalid|required|missing|not allowed|not possible|"
+                         r"must |failed|rejected|abgelehnt", re.I)
 # How many past turns stay word for word; older ones keep the reasoning and drop the page text. Each full turn resends
 # a page of up to 14,000 characters on every call, and input tokens are most of the run's cost (the provider's prompt
 # cache hits only now and then). FULL_TURNS=2 brings back the earlier setting for comparison.
@@ -159,6 +172,7 @@ class Agent:
         self.turns: list[dict] = []
         self.page_seen = ""
         self.held: tuple[str, str] | None = None  # a collected or fetched document, until the agent moves on
+        self.held_by: str | None = None  # "collect" or "fetch": which action produced `held`
         self.coverage = Ledger()  # what this agent really opened, typed and followed (coverage.py)
         self.steps = 0
         self.started = time.time()
@@ -207,20 +221,28 @@ class Agent:
         reply = await llm.chat_json(messages, think=True, label=f"{self.name}:escalated")
         return reply or await llm.chat_json(self._messages(user), think=self.think, label=self.name)
 
-    async def _steps(self, steps: list) -> str:
+    async def _steps(self, steps: list, errors_only: bool = False, limit: int = STEPS_LIMIT) -> str:
         """Runs a chain of label-addressed steps across page reloads (the "steps" action). Every step is turned into
-        the plain action it stands for and passes the same guard as a fill, select, set or click the model sends."""
+        the plain action it stands for and passes the same guard as a fill, select, set or click the model sends.
+        A press that brings a new announcement stops the chain so the model can read it; with `errors_only` (the
+        clerk's enter_positions, Fix #3) only an announcement that reads as a problem stops it, not a "saved" one."""
         done: list[str] = []
-        for number, step in enumerate(steps[:STEPS_LIMIT], start=1):
+        for number, step in enumerate(steps[:limit], start=1):
             if not isinstance(step, dict):
                 continue
             label = str(step.get("press") or step.get("field") or "")
-            page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+            kinds = (("button", "link", "clickable") if "press" in step
+                     else ("select", "input", "checkbox", "radio", "switch"))
+            page = await asyncio.wait_for(self.tab.observe(), READ_TIMEOUT)
+            aid, kind = find_control(page, label, kinds)
+            if aid is None and "no control labelled" in kind:
+                # A configurator can show its next control a moment after the apply that unlocks it: look once more.
+                await asyncio.sleep(0.6)
+                page = await asyncio.wait_for(self.tab.observe(), READ_TIMEOUT)
+                aid, kind = find_control(page, label, kinds)
             if "press" in step:
-                aid, kind = find_control(page, label, ("button", "link", "clickable"))
                 action = {"do": "click", "id": aid}
             else:
-                aid, kind = find_control(page, label, ("select", "input", "checkbox", "radio", "switch"))
                 value = step.get("value", "")
                 if kind == "select":
                     action = {"do": "select", "id": aid, "value": str(value)}
@@ -238,8 +260,10 @@ class Agent:
             result = await asyncio.wait_for(self._browser(action), STEP_TIMEOUT)
             done.append(f'{number}. {label}: {str(result)[:80]}')
             if action["do"] == "click":  # a press can bring an error message: stop there instead of filling on blindly
-                after = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+                after = await asyncio.wait_for(self.tab.observe(), READ_TIMEOUT)
                 new = [a for a in ALERT.findall(after) if a not in alerts_before]
+                if errors_only:
+                    new = [a for a in new if ERROR_ALERT.search(a)]
                 if new:  # an error or a confirmation: the model reads which (run 012496d3: a "saved" notice taken
                     # for an error made the clerk enter the same position again, which the form refused)
                     return (f"ran {len(done)} of {len(steps)} steps: " + "; ".join(done) +
@@ -283,6 +307,17 @@ class Agent:
             return None
         return self.coverage.gate(str(action.get("question", "")).strip("[] "), status)
 
+    async def _renew(self, results: list[str]) -> bool:
+        """Carry on in a fresh tab (browser_env.Tab.renew); the outcome goes to the model with the turn's results."""
+        self.held, self.held_by = None, None
+        try:
+            renewed = await asyncio.wait_for(self.tab.renew(), RENEW_TIMEOUT)
+            results.append("this tab kept failing to load, so it was replaced by a fresh one: " + renewed)
+            return True
+        except Exception as error:  # noqa: BLE001
+            results.append(f"replacing the stuck tab failed: {str(error)[:150]}")
+            return False
+
     async def _alive(self) -> bool:
         try:
             return bool(await self.tab.page.main_frame.evaluate("() => document.querySelectorAll('[data-aid]').length > 0"))
@@ -305,10 +340,18 @@ class Agent:
             self.steps += 1
             clock = time.time()
             try:
-                page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+                page = await asyncio.wait_for(self.tab.observe(), READ_TIMEOUT)
             except asyncio.TimeoutError:
-                stuck += 1
-                page = f"(the page did not finish loading within {STEP_TIMEOUT} s; reload it or go elsewhere)"
+                # Fix #1: a page that cannot be read in READ_TIMEOUT is a broken tab (run a176359f: a 45 s read,
+                # then a failed reload, then a fresh tab that loaded at once): replace it now and read again.
+                page = f"(the page did not finish loading within {READ_TIMEOUT} s; reload it or go elsewhere)"
+                if await self._renew(results):
+                    try:
+                        page = await asyncio.wait_for(self.tab.observe(), READ_TIMEOUT)
+                    except Exception:  # noqa: BLE001
+                        stuck += 1
+                else:
+                    stuck += 1
             except Exception as error:  # noqa: BLE001
                 page = f"(the page could not be read: {str(error)[:200]})"
             self.coverage.saw(page)
@@ -427,10 +470,12 @@ class Agent:
                     results.append(veto)
                     continue
                 before = self.tab.page.url
+                limit = (STEPS_TIMEOUT if do == "steps" else COLLECT_TIMEOUT if do in ("collect", "fetch")
+                         else STEP_TIMEOUT)
                 try:
-                    result = await asyncio.wait_for(self._browser(action), STEPS_TIMEOUT if do == "steps" else STEP_TIMEOUT)
+                    result = await asyncio.wait_for(self._browser(action), limit)
                 except asyncio.TimeoutError:
-                    result = f"{do} took longer than {STEP_TIMEOUT} s and was stopped; the page may be stuck"
+                    result = f"{do} took longer than {limit} s and was stopped; the page may be stuck"
                 except Exception as error:  # noqa: BLE001
                     result = f"{do} failed: {str(error)[:200]}"
                 results.append(result)
@@ -442,9 +487,10 @@ class Agent:
                 # portals often swallow a click or reject a field silently.
                 # The next model turn gets a compact, actionable state-delta
                 # report rather than assuming the dispatch took effect.
+                unreadable = False
                 if do not in ("collect", "fetch"):
                     try:
-                        after = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+                        after = await asyncio.wait_for(self.tab.observe(), READ_TIMEOUT)
                         changed = state_fingerprint(page) != state_fingerprint(after)
                         if changed:
                             self.coverage.moved()
@@ -453,26 +499,27 @@ class Agent:
                             results.append(f"verification: {do} caused no visible page change; inspect the control "
                                            "or try a different recovery path instead of repeating it blindly")
                     except asyncio.TimeoutError:
-                        results.append(f"verification: could not re-read the page within {STEP_TIMEOUT} s")
+                        results.append(f"verification: could not re-read the page within {READ_TIMEOUT} s")
+                        unreadable = True
                     except Exception as error:  # noqa: BLE001
                         results.append(f"verification: could not re-read the page ({str(error)[:160]})")
+                        unreadable = True
                 if do in NAVIGATING:
                     failed = any(sign in str(result) for sign in ("Timeout", "timed out", "took longer", "detached", "ERR_ABORTED"))
                     stuck = stuck + 1 if failed else 0
+                    # Fix #1: a failed navigation that shows a broken tab (detached frame, aborted load, a page that
+                    # cannot be read back) gets a fresh tab now rather than after a second timeout.
+                    if failed and (unreadable or any(sign in str(result) for sign in HARD_FAILURE)):
+                        stuck = max(stuck, 2)
                 if do in ("collect", "fetch"):
-                    self.held = (self.tab.document, self.tab.document_source)
+                    self.held, self.held_by = (self.tab.document, self.tab.document_source), do
                 elif do in NAVIGATING:
-                    self.held = None
+                    self.held, self.held_by = None, None
                 if do in NAVIGATING or self.tab.page.url != before or not await self._alive():
                     moved = True
-            if stuck >= 2:  # the same tab failed twice in a row: carry on in a fresh one (browser_env.Tab.renew)
+            if stuck >= 2:  # the same tab failed twice in a row, or once fatally: carry on in a fresh one
                 stuck = 0
-                try:
-                    renewed = await asyncio.wait_for(self.tab.renew(), STEP_TIMEOUT)
-                    results.append("this tab kept failing to load, so it was replaced by a fresh one: " + renewed)
-                except Exception as error:  # noqa: BLE001
-                    results.append(f"replacing the stuck tab failed: {str(error)[:150]}")
-                self.held = None
+                await self._renew(results)
             self.log(f"(read {read_s:.1f}s, model {model_s:.1f}s, act {time.time() - clock:.1f}s) {thought} | "
                      f"{json.dumps(actions, ensure_ascii=False)[:400]} | " + " ; ".join(r[:160] for r in results))
             if repeats >= 2:

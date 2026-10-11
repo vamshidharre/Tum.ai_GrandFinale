@@ -57,12 +57,24 @@ customer-portal 223k, tender-portal 205k, extract 82k. Only the ~4.9k-token syst
 **If #1, #2 and #3 are fixed:** investigation ≈ bounded by ERP (~02:48 instead of 03:41, −53 s), positions ≈ 35 s
 instead of 110 s (−75 s) → about **4:00–4:20 total**, under the 5:00 target, with the same agentic design.
 
-## 4. Order to apply (one change per test run)
+## 4. Round 2 — three fixes on top of the best package (commit after 95f075b)
 
-| Step | Change | Expected | Run id | Result |
+Built on the exact best package; everything else stays as it was (history, agents, prompts, calculator, review
+checks). Lessons from the failed runs kept OUT: shorter history (ERP looped 121 turns), parallel site agents (2x
+cost), repeated-action blocker (stopped the mailbox helper on a re-locking inbox), early investigation end.
+
+| Fix | Bottleneck (run a176359f) | Change | Files | Expected |
 |---|---|---|---|---|
-| 1 | #1 click/timeout/fresh-tab fix only | removes the 1–2 min hangs on flaky pages | | |
-| 2 | #2 positions template after the first position | −~80 s | | |
-| 3 | #3 end investigation when complete | −~20–40 s | | |
-| 4 | #6 read the brief without thinking | −~4 s (more when the model is busy) | | |
-| 5 | #4 ERP batching | −~30–60 s once ERP is the bottleneck | | |
+| #1 | Tender login hang, 128 s | Element timeout 8 s, navigation 15 s; a click that started a slow page load counts as done and is never pressed twice; login success = the password field is gone (else reported after ≤ 8 s); page read capped at 15 s and a fresh tab at once when it fails; a navigation failure with a broken-tab sign (detached, ERR_ABORTED, page unreadable) renews at the first failure; `collect`/`fetch` keep 75 s | browser_env.py, worker.py | −100 s or more in a run with a flaky page; nothing in a clean run |
+| #2 | Tender agent browsing after its job, 41 s | The Q&A question closes by itself when the Q&A list was followed to its end by `collect` (≥ 2 pages, not capped) and is read; routine "document read" notices no longer wake an idle agent (only new questions or a problem notice do) | agent.py, casefile.py, worker.py (`held_by`) | −20–40 s when the tender agent is last; fewer "done" turns (cost) |
+| #3 | 5 positions, 110 s (one dropdown per turn) | Clerk enters the FIRST position itself, then ONE `enter_positions` call repeats the steps that worked for every other position, in the form's order; a position still shown in the form's heading after the last press is reported NOT saved; error notices stop it; typing guard and the review checklist unchanged | submit.py, worker.py (`_steps` errors_only) | −60–75 s |
+
+Expected total with all three: about 4:00–4:45 (the investigation is then bounded by the ERP at ~2:50).
+
+| Run | Package | Quality | Time | Cost | Notes |
+|---|---|---|---|---|---|
+| (to fill) | round 2 (#1+#2+#3) | | | | |
+
+Tests written for each fix (not run locally, at the user's request): `tests/test_speed_fixes.py`,
+`tests/test_enter_positions.py`, `tests/test_browser_env.py` (slow click, login success/failure),
+`tests/test_worker.py` (fresh tab at the first hard failure).

@@ -125,12 +125,48 @@ class LoopDetectionAndChaining(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(outcome["done"])
         self.assertIn("the page changed, its ids are stale", asked[1])
 
+    async def test_a_navigation_failure_that_shows_a_broken_tab_renews_it_at_once(self):
+        # Scored run a176359f: a detached frame cost 125 s (a 30 s click, a 45 s read, then a failed reload) before
+        # the second failure renewed the tab; a fresh tab loaded at once.
+        tab = FakeTab(change_on_fill=False)
+        renew_calls, clicks = [], []
+
+        async def failing_click(aid):
+            clicks.append(aid)
+            if len(clicks) > 1:
+                return f"clicked [{aid}]"
+            return f"click [{aid}] failed: Page.click: net::ERR_ABORTED; maybe frame was detached?"
+
+        async def renew():
+            renew_calls.append(True)
+            tab.view = 'url: http://portal.test\ntitle: Fresh\n[1] button "Retry"'
+            return tab.view
+
+        tab.click = failing_click
+        tab.renew = renew
+        replies = [
+            {"thought": "click 1", "actions": [{"do": "click", "id": 1}]},
+            {"thought": "click 2", "actions": [{"do": "click", "id": 1}]},
+            {"thought": "done", "actions": [{"do": "done", "summary": "recovered"}]},
+        ]
+        asked = []
+
+        async def model(messages, **kwargs):
+            asked.append(messages[-1]["content"])
+            return replies.pop(0)
+
+        with patch.object(llm, "chat_json", model):
+            outcome = await Agent("renew-test", tab, "system", lambda: "job", max_steps=5).run()
+        self.assertTrue(outcome["done"])
+        self.assertEqual(len(renew_calls), 1)
+        self.assertIn("this tab kept failing to load, so it was replaced by a fresh one", asked[1])
+
     async def test_two_consecutive_navigation_failures_trigger_tab_renew(self):
         tab = FakeTab(change_on_fill=False)
         renew_calls = []
 
-        async def failing_click(aid):
-            return f"click [{aid}] failed: Page.click: net::ERR_ABORTED; maybe frame was detached?"
+        async def failing_click(aid):  # a timeout alone may be a slow page: the tab is replaced at the second one
+            return f"click [{aid}] failed: Page.click: Timeout 6000ms exceeded."
 
         async def renew():
             renew_calls.append(True)

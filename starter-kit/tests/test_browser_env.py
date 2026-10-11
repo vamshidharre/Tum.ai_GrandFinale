@@ -89,6 +89,9 @@ class FixtureSite:
         if path.startswith("/slow/"):
             time.sleep(self.DELAY)
             path = path[len("/slow"):]
+        if path.startswith("/veryslow/"):  # longer than a click waits: the page load outlasts the click itself
+            time.sleep(4)
+            path = path[len("/veryslow"):]
         if path.startswith("/private/"):
             if not user:
                 return self.send(request, 403, "Sign in first.", TYPES[".txt"])
@@ -661,6 +664,31 @@ class Acting(Case):
         stranger = await self.open("/downloads.html")
         self.assertIn("opened", await stranger.goto("/private/price_list.csv"))
         self.assertIn("Sign in first.", await stranger.observe())
+
+    async def test_a_click_whose_page_load_is_slow_counts_as_one_click(self):
+        # A local run and scored run a176359f: a click that started a slow page load was reported as failed, and
+        # the fallback then waited 30 s for a control that was gone; on a page that had not moved yet it would
+        # have pressed it a second time (a second code request voids the first code).
+        tab = await self.open("/slow_send.html")
+        said = await tab.click(self.control(await tab.observe(), "button", "Send").id)
+        self.assertTrue(said.startswith("clicked"), said)
+        self.assertEqual([path for method, path, _ in SITE.requests if method == "POST"], ["/veryslow/echo"])
+        self.assertIn("Received", await tab.observe())
+
+    async def test_a_login_that_goes_through_is_detected_at_once(self):
+        tab = await self.open("/login", LOGIN)
+        started = time.monotonic()
+        said = await tab.login()
+        self.assertIn("logged in", said)
+        self.assertLess(time.monotonic() - started, 6)  # the login form is gone: no fixed wait
+
+    async def test_a_failed_login_is_reported_within_a_bounded_wait(self):
+        # Run a176359f: a login that did not go through cost 78 s + 45 s of waiting before anything changed.
+        tab = await self.open("/login", {"username": LOGIN["username"], "password": "wrong"})
+        started = time.monotonic()
+        said = await tab.login()
+        self.assertIn("login form is still shown", said)
+        self.assertLess(time.monotonic() - started, 15)
 
 
 if __name__ == "__main__":

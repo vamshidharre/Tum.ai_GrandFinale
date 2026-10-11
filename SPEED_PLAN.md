@@ -48,3 +48,9 @@ Status: ✅ done and verified in a run · 🟨 done, waiting for a run · ❌ tr
 - The model decides navigation, searches and relevance; helpers only execute what it chose.
 - Run the unit tests (`uv run python -m unittest discover tests`) before a test run; one test run at a time.
 - Record every run in the Runs table with its verdict, and every change's status here.
+
+## Round 2 (11 Oct, from the exact best package)
+
+See `BEST_RUN_TIMING.md` section 4: Fix #1 (login/page hang), Fix #2 (tender agent stops; Q&A closes when listed in
+full; routine news does not wake), Fix #3 (first position by hand, then one enter_positions for the rest).
+Not repeated from round 1: shorter history, crews, repeated-action blocker, early end, signing-prompt changes.

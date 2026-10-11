@@ -301,6 +301,9 @@ class CaseFile:
         self.evidence: list[dict] = []  # extracted records, retained with the page and agent that supplied them
         self.conflicts: list[str] = []  # where a later document replaced a different value of an earlier one
         self.answers: dict[str, tuple[str, str]] = {}  # question id -> (complete | absent, note)
+        # Fix #2: question id -> the agent that filed the whole list it asks for (a Q&A list `collect` followed to its
+        # own end); the question closes by itself once that agent's documents are read (see questions()).
+        self.listed_in_full: dict[str, str] = {}
         self.filed: set[str] = set()
         self.news: dict[str, list[str]] = {}
         self.pending = 0
@@ -673,6 +676,10 @@ class CaseFile:
         if not facts.positions:
             ask("positions", "The tender's bill of quantities: every position with its number, quantity, unit and "
                              "requirement reference.")
+        filer = self.listed_in_full.get("clarifications")
+        if (filer and "clarifications" not in self.answers and self.clarifications
+                and not self.pending_for(filer)):
+            self.answers["clarifications"] = ("complete", "the Q&A list was followed to its end, filed and read")
         ask("clarifications", "Every answer in the tender's bidder Q&A, on all of its pages: quantity changes, "
                               "withdrawn answers, technical amendments and the keys an answer assigns to a position. "
                               "Answer this question complete once every page of the Q&A is filed.")

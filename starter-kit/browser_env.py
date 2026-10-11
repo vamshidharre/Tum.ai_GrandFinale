@@ -238,6 +238,12 @@ LOGIN_JS = r"""
 """
 
 MAX_OBSERVATION = 14000
+# Playwright's own defaults wait 30 s for an element and 30 s for a navigation. On the challenge's flaky portals a
+# control that is not there within a few seconds is not coming (scored run a176359f: one click fallback waited the
+# full 30 s on a detached frame), and a fresh tab is quicker than waiting (Tab.renew).
+ACTION_TIMEOUT_MS, NAVIGATION_TIMEOUT_MS = 8000, 15000
+SETTLE_SECONDS = 8  # the longest a page may keep loading data before it is read as it is
+LOGIN_WAIT_SECONDS = 8  # after a login is submitted: how long the login form may stay before it counts as not passed
 UNREADABLE = "(this document could not be read"
 PAGE_BREAK = "===== collected page"  # between the pages of a list or document that `collect` followed to its end
 
@@ -404,6 +410,12 @@ class Tab:
         self._watch(page)
 
     def _watch(self, page) -> None:
+        for setter, value in (("set_default_timeout", ACTION_TIMEOUT_MS),
+                              ("set_default_navigation_timeout", NAVIGATION_TIMEOUT_MS)):
+            try:
+                getattr(page, setter)(value)
+            except Exception:  # noqa: BLE001  a stand-in page in the tests has no such setting
+                pass
         page.on("dialog", lambda dialog: asyncio.ensure_future(self._on_dialog(dialog)))
         page.on("response", self._on_response)
         page.on("request", lambda request: self.loading.add(request) if request.resource_type in ("document", "xhr", "fetch") else None)
@@ -463,7 +475,7 @@ class Tab:
     async def settle(self):
         """Wait until the page, its frames and the data they fetch have arrived and nothing more is on its way."""
         loop = asyncio.get_running_loop()
-        end, quiet = loop.time() + 12, None
+        end, quiet = loop.time() + SETTLE_SECONDS, None
         await asyncio.sleep(0.1)  # let a click start its request
         while loop.time() < end:
             if self.loading:
@@ -477,7 +489,7 @@ class Tab:
             self.loading.clear()  # a request that never ends must not hold up every later step
         for frame in list(self.page.frames):
             try:
-                await frame.wait_for_load_state("domcontentloaded", timeout=8000 if frame == self.page.main_frame else 3000)
+                await frame.wait_for_load_state("domcontentloaded", timeout=6000 if frame == self.page.main_frame else 3000)
             except Exception:  # noqa: BLE001
                 pass
         for _ in range(3):  # a server error page: retry the same address, as a person would press reload
@@ -600,10 +612,17 @@ class Tab:
             return f"[{aid}] is disabled (inside a locked or inert area?); nothing happened"
         before = self.page.url
         try:
-            await locator.click(timeout=2500)
-        except Exception:  # noqa: BLE001  hidden in a collapsed menu, or covered: activate it directly
+            await locator.click(timeout=2500, no_wait_after=True)
+        except Exception as error:  # noqa: BLE001  hidden in a collapsed menu, or covered: activate it directly
+            # A click that started a slow page load is reported as failed although it happened (local run: every
+            # login and cookie button; scored run a176359f: a 78 s login). Clicking again would press it twice (a
+            # second code request voids the first code), so only a control that is still there, on a page that
+            # has not moved, is activated directly.
+            if not await self._still_here(locator, before, error):
+                await self.settle()
+                return f'clicked [{aid}] "{info["name"]}"' + (f"; now at {self.page.url}" if self.page.url != before else "")
             try:
-                await locator.evaluate("el => el.click()")
+                await locator.evaluate("el => el.click()", timeout=3000)
             except Exception as error:  # noqa: BLE001
                 return f"could not click [{aid}]: {str(error)[:150]}"
         await self.settle()
@@ -611,6 +630,15 @@ class Tab:
             return "the page now has a modal dialog; read it before acting behind it"
         moved = self.page.url != before
         return f'clicked [{aid}] "{info["name"]}"' + (f"; now at {self.page.url}" if moved else "")
+
+    async def _still_here(self, locator, before: str, error: Exception) -> bool:
+        """After a click that raised: is the control still on an unchanged page, so that the click did not happen?"""
+        if self.page.url != before or "navigat" in str(error).lower() or "detached" in str(error).lower():
+            return False
+        try:
+            return await asyncio.wait_for(locator.count(), 2) > 0
+        except Exception:  # noqa: BLE001  the page is being replaced
+            return False
 
     async def fill(self, aid, text: str, enter: bool = False) -> str:
         locator = self._locator(aid)
@@ -622,7 +650,10 @@ class Tab:
             return f"could not fill [{aid}]: {str(error)[:150]}"
         readback = await self._readback(locator, str(text))  # before Enter can load another page
         if enter:
-            await locator.press("Enter")
+            try:
+                await locator.press("Enter", no_wait_after=True)
+            except Exception:  # noqa: BLE001  Enter started a slow page load (a search): it was pressed
+                pass
             await self.settle()
         if await self._modal_is_open():
             return "the page now has a modal dialog; read it before acting behind it"
@@ -707,7 +738,7 @@ class Tab:
         if not self._on_site(target):
             return f"{target} is not on this website; you only work on {self.base_url}"
         try:
-            await self.page.goto(target, wait_until="domcontentloaded", timeout=20000)
+            await self.page.goto(target, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
         except Exception as error:  # noqa: BLE001
             return f"could not open {target}: {str(error)[:150]}"
         await self.settle()
@@ -715,7 +746,7 @@ class Tab:
 
     async def back(self) -> str:
         try:
-            await self.page.go_back(wait_until="domcontentloaded", timeout=15000)
+            await self.page.go_back(wait_until="domcontentloaded", timeout=10000)
         except Exception as error:  # noqa: BLE001
             return f"could not go back: {str(error)[:120]}"
         await self.settle()
@@ -723,7 +754,7 @@ class Tab:
 
     async def reload(self) -> str:
         try:
-            await self.page.reload(wait_until="domcontentloaded", timeout=15000)
+            await self.page.reload(wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
         except Exception as error:  # noqa: BLE001
             return f"could not reload: {str(error)[:120]}"
         await self.settle()
@@ -739,10 +770,37 @@ class Tab:
             except Exception:  # noqa: BLE001
                 continue
             if outcome == "ok":
-                await frame.locator("[data-login-password]").first.press("Enter")
+                try:
+                    await frame.locator("[data-login-password]").first.press("Enter", no_wait_after=True)
+                except Exception:  # noqa: BLE001  the login started a slow page load: it was submitted
+                    pass
                 await self.settle()
-                return f"entered the credentials and submitted the login form; now at {self.page.url}"
+                # Success is read from the page, not waited for: the login form is gone. A form still showing
+                # after the bounded wait is reported at once instead of being waited on for 30-45 s (run a176359f).
+                if await self.password_field_shown():
+                    return ("submitted the login form, but the login form is still shown: read the page for an error "
+                            f"message (now at {self.page.url})")
+                return f"entered the credentials and submitted the login form; logged in, now at {self.page.url}"
         return outcome
+
+    async def password_field_shown(self, wait: float = LOGIN_WAIT_SECONDS) -> bool:
+        """Whether a visible password field is still on the page after up to `wait` seconds: the DOM marker of a
+        login that has not gone through (polled, so a login that went through returns at once)."""
+        loop = asyncio.get_running_loop()
+        end = loop.time() + wait
+        while True:
+            shown = False
+            for frame in list(self.page.frames):
+                try:
+                    if await frame.evaluate("() => [...document.querySelectorAll('input[type=password]')]"
+                                            ".some(e => e.offsetParent !== null)"):
+                        shown = True
+                        break
+                except Exception:  # noqa: BLE001  a frame that is being replaced
+                    continue
+            if not shown or loop.time() >= end:
+                return shown
+            await asyncio.sleep(0.25)
 
     async def collect(self, aid, max_pages: int = 10) -> str:
         """Follow the paging control the model chose until it is gone, and return every page as one document.
@@ -783,7 +841,7 @@ class Tab:
                 capped = True
                 break
             try:
-                await control.click(timeout=2500)
+                await control.click(timeout=2500, no_wait_after=True)
             except Exception:  # noqa: BLE001
                 try:
                     await control.evaluate("el => el.click()")
