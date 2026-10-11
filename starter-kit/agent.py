@@ -162,25 +162,6 @@ class Team:
 
 FILE_EACH_LIMIT = 12  # records per file_each action
 FILE_EACH_SECONDS = 150  # and seconds for all of them; the agent continues from the list afterwards
-BATCH_NUDGE_AFTER = 3  # same-kind pages filed one by one before file_each is suggested once
-
-
-def batch_hint(counter: dict, kind: str, filed: bool) -> str:
-    """Suggest the file_each batch action once an agent files the same kind of page one by one.
-
-    `counter` maps kind -> consecutive filings (mutated). Returns the hint text, or "". Fires
-    exactly once per streak so it costs one line, not a nag on every turn. The model still
-    decides; nothing here assumes what any website looks like."""
-    if not filed or not kind:
-        return ""
-    counter[kind] = counter.get(kind, 0) + 1
-    for other in [key for key in counter if key != kind]:
-        counter.pop(other, None)
-    if counter[kind] == BATCH_NUDGE_AFTER:
-        return ("; you have now filed several pages of this kind one by one — if the list they came "
-                "from still shows more records of the same kind, go back to that list and file the "
-                "rest together with one file_each (naming the records and the tabs that hold the facts)")
-    return ""
 
 
 async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "") -> str:
@@ -258,17 +239,9 @@ async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "
     return f"file_each opened {len(links)} record(s) and is back on the list:\n" + "\n".join(report)
 
 
-CREW_NOTE = """
-You are one of {count} agents on this website, each in its own tab and logged in to the same session; the OPEN
-QUESTIONS shown to you are your share of its work. Do not work on the others' questions: they are being handled.
-"""
-
-
-def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float, name: str | None = None) -> Agent:
-    name = name or tab.site_id
-    system = INVESTIGATOR.format(site=tab.site_id, url=tab.base_url, brief=case.brief, actions=ACTIONS_HELP)
-    if len(CREW.get(tab.site_id) or []) > 1:
-        system += CREW_NOTE.format(count=len(CREW[tab.site_id]))
+def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent:
+    name = tab.site_id
+    system = INVESTIGATOR.format(site=name, url=tab.base_url, brief=case.brief, actions=ACTIONS_HELP)
 
     def briefing() -> str:
         questions = questions_for_site(name, case.questions())
@@ -285,16 +258,12 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float, name: st
         return text
 
     agent: Agent
-    batched: dict = {}  # kind -> consecutive one-by-one filings, for the file_each nudge
 
     async def keep(action: dict) -> str:
-        kind = str(action.get("kind", ""))
         document, source = agent.document()
-        res = case.file(kind, document, source, name)
+        res = case.file(str(action.get("kind", "")), document, source, name)
         if res.startswith("this document is already filed"):
             res += "; do not file this same page again — check OPEN QUESTIONS for what is missing on another page, or finish with done"
-        else:
-            res += batch_hint(batched, kind, not res.startswith("there is no document"))
         return res
 
     async def file_each_action(action: dict) -> str:
@@ -325,7 +294,6 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float, name: st
                               "not to match: the case file does the matching, and requirement values can still change "
                               "when amendments or reserves are filed. If you need facts the other agents have not "
                               "filed yet, finish with done; you are called again when the case file has news.")
-    AGENTS[name] = agent
     return agent
 
 
@@ -336,53 +304,11 @@ SITE_ROLES: dict[str, str] = {}
 # from then on. The routing assumes the public split of facts (materials in the ERP, keys and approvals in the mail);
 # the private dataset may split them differently, and a routed question must not end up with nobody to answer it.
 RELEASED: set[str] = set()
-# Several agents on one website, each in its own tab of the same browser session, split its open questions between
-# them. Scored run a176359f: the ERP agent worked 46 turns one after another (search a group, open a candidate, its
-# planning tab, file it; then every price condition; then every stock) and was the last to finish. Rule 10 of the
-# brief says sites and positions can be investigated in parallel, and tabs are not limited. By role: CREW_SIZE["erp"]
-# agents on the ERP, CREW_SIZE["mail"] on the webmail (1 turns it off).
-# Off by default: test run 10def205 (3 ERP + 2 mail agents) took 236 s and $0.31 for the investigation against 219 s
-# and $0.14 with one agent per site (a176359f): the agents redid each other's materials (154 ERP calls instead of 46).
-CREW_SIZE = {"erp": int(os.environ.get("ERP_AGENTS", "1")), "mail": int(os.environ.get("MAIL_AGENTS", "1"))}
-HELPER_MARK = "~"  # a helper agent is named "<site>~<n>"
-CREW: dict[str, list[str]] = {}  # site -> the names of its agents, the site's own first
-ASSIGNED: dict[str, str] = {}  # question group -> the agent of its site's crew that works on it
-AGENTS: dict[str, Agent] = {}  # name -> the investigator, so a crew can wait for its site's agent to be under way
-
-
-def base_site(name: str) -> str:
-    """The website an agent works on: "erp" for "erp" and for its helper "erp~2"."""
-    return name.split(HELPER_MARK, 1)[0]
-
-
-def share(name: str, routed: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """This agent's share of its website's open questions when several agents work that website. A question group
-    stays with the agent it was given to while it is open; a new one goes to the agent with the fewest open groups.
-    On the ERP each question is a group (one per requirement or material); on the webmail one kind of record is (all
-    delivery commitments come from the same message)."""
-    site = base_site(name)
-    crew = CREW.get(site) or []
-    if len(crew) < 2:
-        return routed
-
-    def group(qid: str) -> str:
-        return qid.split(":", 1)[0] if site_role(site) == "mail" else qid
-
-    groups = sorted({group(qid) for qid, _ in routed if qid not in RELEASED})
-    load = {member: 0 for member in crew}
-    for key in groups:
-        if ASSIGNED.get(key) in load:
-            load[ASSIGNED[key]] += 1
-    for key in groups:
-        if ASSIGNED.get(key) not in load:
-            ASSIGNED[key] = min(crew, key=lambda member: (load[member], crew.index(member)))
-            load[ASSIGNED[key]] += 1
-    return [(qid, text) for qid, text in routed if qid in RELEASED or ASSIGNED.get(group(qid)) == name]
 
 
 def site_role(site_id: str) -> str | None:
     """"erp" or "mail" for the agent whose questions are routed, None for one that sees every question."""
-    site = base_site(site_id).casefold()
+    site = site_id.casefold()
     for role in ("erp", "mail"):
         named = (SITE_ROLES.get(role) or "").casefold()
         if (site == named) if named else (role in site):
@@ -392,9 +318,8 @@ def site_role(site_id: str) -> str | None:
 
 def questions_for_site(site_id: str, questions: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """Keep specialized mail and ERP agents on questions their portal can resolve (from Vamshidhar's v1 package,
-    sandbox run 44a626ef: 100 in 9.6 min, every agent finished by itself). Several agents on one website share its
-    questions (`share`)."""
-    site = base_site(site_id).casefold()
+    sandbox run 44a626ef: 100 in 9.6 min, every agent finished by itself)."""
+    site = site_id.casefold()
 
     def plays(role: str) -> bool:
         named = (SITE_ROLES.get(role) or "").casefold()
@@ -402,12 +327,12 @@ def questions_for_site(site_id: str, questions: list[tuple[str, str]]) -> list[t
 
     if plays("erp"):
         prefixes = ("material:", "data:")
-        return share(site_id, [(qid, text) for qid, text in questions if qid.startswith(prefixes) or qid in RELEASED])
+        return [(qid, text) for qid, text in questions if qid.startswith(prefixes) or qid in RELEASED]
     if plays("mail"):
         prefixes = ("condition_group:", "packaging_tariff:", "delivery_commitment:", "setup_pool:",
                     "project_bonus:", "index:", "fx:", "reserve:")
-        return share(site_id, [(qid, text) for qid, text in questions
-                               if qid in ("mailbox", "discount") or qid.startswith(prefixes) or qid in RELEASED])
+        return [(qid, text) for qid, text in questions
+                if qid in ("mailbox", "discount") or qid.startswith(prefixes) or qid in RELEASED]
     return questions
 
 
@@ -427,102 +352,6 @@ async def open_tabs(playwright, sites: list[dict]) -> tuple[list, dict[str, Tab]
     return opened, tabs
 
 
-CREW_MIN_SECONDS = 90  # helpers start only while this much investigation time is left
-SETTLED_SECONDS = 3  # how long the case file must stay complete and unchanged before the investigation ends
-
-
-async def end_when_settled(case: CaseFile, team: Team, tasks: list, mail: str | None) -> None:
-    """End the investigation as soon as the case file is complete: no open question, nothing still being read, no
-    change for SETTLED_SECONDS, and the mailbox agent (which decides when its search for the most recent approvals
-    is done) idle. Agents still browsing are stopped. Test run 10def205: the last question closed ~22 s before the
-    last agent finished re-filing pages that were already on file; in a176359f the tender-portal agent kept opening
-    documents after its questions were answered."""
-    since = None
-    while not team.finished.is_set():
-        await asyncio.sleep(1.0)
-        complete = (not case.pending and (mail is None or mail in team.idle or mail not in team.names)
-                    and not case.questions())
-        if not complete:
-            since = None
-        elif since is None or since[1] != case.version:
-            since = (time.time(), case.version)
-        elif time.time() - since[0] >= SETTLED_SECONDS:
-            print("Every question is answered and nothing is being read: the investigation ends now", flush=True)
-            team.finished.set()
-            for task in tasks:
-                task.cancel()
-            return
-
-
-async def open_site(tab: Tab) -> list[str]:
-    """Before the agent's first turn, while the model still reads the brief: open the website from the run's access
-    list and, if it shows a login form, log in with the run's credentials, as every agent's first turn did (two
-    turns and ~5 s per agent in run a176359f). Pages after the login (cookie walls, access checks, menus) are left
-    to the model."""
-    notes = []
-    try:
-        notes.append(await asyncio.wait_for(tab.goto(tab.base_url + "/"), 25))
-        if tab.credentials.get("password"):
-            outcome = await asyncio.wait_for(tab.login(), 20)
-            if not outcome.startswith("no password field"):
-                notes.append("logged in with this run's credentials: " + outcome)
-    except Exception as error:  # noqa: BLE001
-        notes.append(f"opening the website did not finish ({str(error)[:120] or 'timed out'}); look at the page")
-    return [f"(before your first turn) {note}" for note in notes]
-
-
-async def on_login_page(tab: Tab) -> bool:
-    try:
-        return bool(await tab.page.main_frame.evaluate(
-            "() => [...document.querySelectorAll('input[type=password]')].some(e => e.offsetParent !== null)"))
-    except Exception:  # noqa: BLE001
-        return True
-
-
-async def crew(case: CaseFile, team: Team, tab: Tab, size: int, until: float, run) -> list:
-    """Helper agents for the website of `tab`: once its own agent is under way (logged in, past its first turns) and
-    the website has at least two open questions, `size - 1` more agents start in new tabs of the same browser session
-    and the site's questions are shared out (`share`). Returns the helpers' outcomes."""
-    site = tab.site_id
-    while True:
-        if team.finished.is_set() or until - time.time() < CREW_MIN_SECONDS:
-            return []
-        agent = AGENTS.get(site)
-        if (agent is not None and agent.steps >= 2 and len(questions_for_site(site, case.questions())) >= 2
-                and not await on_login_page(tab)):
-            break
-        await asyncio.sleep(1.0)
-    helpers = []
-    for number in range(2, size + 1):
-        try:
-            page = await asyncio.wait_for(tab.page.context.new_page(), 15)
-        except Exception as error:  # noqa: BLE001
-            print(f"[{site}] could not open a tab for a helper: {str(error)[:150]}", flush=True)
-            break
-        helper = Tab(page, {"siteId": site, "url": tab.base_url, "credentials": tab.credentials})
-        helper.spares = tab.spares
-        helpers.append((f"{site}{HELPER_MARK}{number}", helper))
-    if not helpers or team.finished.is_set():
-        return []
-    CREW[site] = [site] + [name for name, _ in helpers]
-    for key in [key for key, member in ASSIGNED.items() if base_site(member) == site]:
-        ASSIGNED.pop(key)  # share the open questions out again, among all of them
-    team.names.update(name for name, _ in helpers)
-    print(f"[{site}] {len(helpers)} more agent(s) on this website: {', '.join(name for name, _ in helpers)}", flush=True)
-
-    async def start(name: str, helper: Tab):
-        try:
-            note = await asyncio.wait_for(helper.goto(helper.base_url + "/"), 20)
-        except Exception as error:  # noqa: BLE001
-            note = f"opening the website did not finish ({str(error)[:120] or 'timed out'})"
-        outcome = await run(helper, name, [f"(before your first turn) {note}"])
-        print(f"[{name}] finished: {repr(outcome) if isinstance(outcome, BaseException) else json.dumps(outcome, ensure_ascii=False)[:300]}",
-              flush=True)
-        return outcome
-
-    return await asyncio.gather(*(start(name, helper) for name, helper in helpers), return_exceptions=True)
-
-
 async def solve(task: dict, playwright) -> dict | None:
     started = time.time()
     sites = [site for site in task.get("access") or [] if isinstance(site, dict) and site.get("siteId") and site.get("url")]
@@ -531,47 +360,35 @@ async def solve(task: dict, playwright) -> dict | None:
         return None
     brief = task["brief"]
     listing = "\n".join(f"- {site['siteId']}: {site['url']}" for site in sites)
-    # The model reads the brief while the browsers open the websites and log in (open_site).
-    context_call = asyncio.ensure_future(read_context(brief + f"\n\nThe websites of this run:\n{listing}"))
+    context = await read_context(brief + f"\n\nThe websites of this run:\n{listing}")
+    SITE_ROLES.clear()
+    RELEASED.clear()
+    SITE_ROLES.update({role: str(context.get(f"{role}_site") or "") for role in ("erp", "mail")
+                       if str(context.get(f"{role}_site") or "") in {site["siteId"] for site in sites}})
+    case = CaseFile(brief, context)
+    print(f"Sanity checks on: {', '.join(sanity.active()) or 'none'}", flush=True)
+    print(f"Context: tender {case.reference}, scenario {case.scenario.isoformat()}, company {case.company}, "
+          f"senders {case.senders}", flush=True)
+
+    left = contract.seconds_left(task)
+    budget = min(left, 20 * 60) if left != float("inf") else 20 * 60  # a scored run has 20 minutes
+    hard_stop = started + budget - 45
+    # The bid form takes ~2 min and the signing code another 1-2 min; a signed partial bid scores, an unsigned
+    # complete one does not. So the investigation ends with 8 minutes left (sandbox test run 54c78c38: 330 s was
+    # too little and the run ended unsigned).
+    submit_reserve = min(480, budget * 0.4)
+    investigate_until = hard_stop - submit_reserve
+
     opened, tabs = await open_tabs(playwright, sites)
     try:
-        openings = {name: asyncio.ensure_future(open_site(tab)) for name, tab in tabs.items()}
-        context = await context_call
-        SITE_ROLES.clear()
-        RELEASED.clear()
-        CREW.clear()
-        ASSIGNED.clear()
-        AGENTS.clear()
-        SITE_ROLES.update({role: str(context.get(f"{role}_site") or "") for role in ("erp", "mail")
-                           if str(context.get(f"{role}_site") or "") in {site["siteId"] for site in sites}})
-        case = CaseFile(brief, context)
-        print(f"Sanity checks on: {', '.join(sanity.active()) or 'none'}", flush=True)
-        print(f"Context: tender {case.reference}, scenario {case.scenario.isoformat()}, company {case.company}, "
-              f"senders {case.senders}", flush=True)
-
-        left = contract.seconds_left(task)
-        budget = min(left, 20 * 60) if left != float("inf") else 20 * 60  # a scored run has 20 minutes
-        hard_stop = started + budget - 45
-        # The bid form takes ~2 min and the signing code another 1-2 min; a signed partial bid scores, an unsigned
-        # complete one does not. So the investigation ends with 8 minutes left (sandbox test run 54c78c38: 330 s was
-        # too little and the run ended unsigned).
-        submit_reserve = min(480, budget * 0.4)
-        investigate_until = hard_stop - submit_reserve
-
         working = [tab for name, tab in tabs.items() if not only or name in only]
         team = Team(case, [tab.site_id for tab in working], investigate_until)
-
-        async def bounded(tab, name=None, opening=None):  # an agent stuck past the deadline is stopped so that the others' facts still count
-            name = name or tab.site_id
-            if opening is None and name in openings:
-                opening = await openings[name]
+        async def bounded(tab):  # an agent stuck past the deadline is stopped so that the others' facts still count
             restarted = False
             while True:
                 limit = max(10.0, investigate_until - time.time() + 20)
-                agent = investigator(case, team, tab, investigate_until, name)
-                agent.opening, opening = list(opening or []), None
                 try:
-                    outcome = await asyncio.wait_for(agent.run(), limit)
+                    outcome = await asyncio.wait_for(investigator(case, team, tab, investigate_until).run(), limit)
                 except asyncio.TimeoutError:
                     team.finished.set()
                     return RuntimeError(f"stopped after {limit:.0f} s: still busy at the investigation deadline")
@@ -580,23 +397,17 @@ async def solve(task: dict, playwright) -> dict | None:
                 if (sanity.enabled("agent_restart") and not restarted and not outcome.get("done")
                         and investigate_until - time.time() > RESTART_MIN_SECONDS and case.questions()):
                     restarted = True
-                    print(f"[{name}] stopped unfinished after {outcome.get('steps')} steps; restarting once "
+                    print(f"[{tab.site_id}] stopped unfinished after {outcome.get('steps')} steps; restarting once "
                           "in a fresh tab", flush=True)
                     try:
                         await asyncio.wait_for(tab.renew(), 45)
                     except Exception as error:  # noqa: BLE001
-                        print(f"[{name}] could not renew the tab: {str(error)[:150]}", flush=True)
+                        print(f"[{tab.site_id}] could not renew the tab: {str(error)[:150]}", flush=True)
                     continue
                 return outcome
-        crews = [crew(case, team, tab, CREW_SIZE.get(site_role(tab.site_id) or "", 1), investigate_until, bounded)
-                 for tab in working if CREW_SIZE.get(site_role(tab.site_id) or "", 1) > 1]
-        tasks = [asyncio.ensure_future(job) for job in [*(bounded(tab) for tab in working), *crews]]
-        mail = next((tab.site_id for tab in working if site_role(tab.site_id) == "mail"), None)
-        settled = asyncio.ensure_future(end_when_settled(case, team, tasks, mail))
-        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
-        settled.cancel()
+        outcomes = await asyncio.gather(*(bounded(tab) for tab in working), return_exceptions=True)
         for tab, outcome in zip(working, outcomes):
-            print(f"[{tab.site_id}] finished: {repr(outcome) if isinstance(outcome, BaseException) else json.dumps(outcome, ensure_ascii=False)[:300]}", flush=True)
+            print(f"[{tab.site_id}] finished: {outcome if isinstance(outcome, Exception) else json.dumps(outcome, ensure_ascii=False)[:300]}", flush=True)
         for _ in range(40):  # facts of the last filed documents
             if not case.pending:
                 break

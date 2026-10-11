@@ -89,9 +89,6 @@ class FixtureSite:
         if path.startswith("/slow/"):
             time.sleep(self.DELAY)
             path = path[len("/slow"):]
-        if path.startswith("/veryslow/"):  # longer than a click waits: the page load outlasts the click itself
-            time.sleep(4)
-            path = path[len("/veryslow"):]
         if path.startswith("/private/"):
             if not user:
                 return self.send(request, 403, "Sign in first.", TYPES[".txt"])
@@ -664,16 +661,6 @@ class Acting(Case):
         stranger = await self.open("/downloads.html")
         self.assertIn("opened", await stranger.goto("/private/price_list.csv"))
         self.assertIn("Sign in first.", await stranger.observe())
-
-    async def test_a_click_whose_page_load_is_slow_counts_as_one_click(self):
-        # A local run and scored run a176359f: a click that started a slow page load was reported as failed, and
-        # the fallback then waited 30 s for a control that was gone; on a page that had not moved yet it would
-        # have pressed it a second time (a second code request voids the first code).
-        tab = await self.open("/slow_send.html")
-        said = await tab.click(self.control(await tab.observe(), "button", "Send").id)
-        self.assertTrue(said.startswith("clicked"), said)
-        self.assertEqual([path for method, path, _ in SITE.requests if method == "POST"], ["/veryslow/echo"])
-        self.assertIn("Received", await tab.observe())
 
 
 if __name__ == "__main__":

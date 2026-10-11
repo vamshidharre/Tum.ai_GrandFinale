@@ -60,32 +60,15 @@ Reading the page:
   after a session expires, log in again. Surveys, tools and help pages lead away from your task.
 """
 
-# Seconds for one page read or one browser action: a hung page must not freeze the whole run. Scored run a176359f lost
-# 125 s on one flaky tender-portal login (a 30 s click, then a 45 s read, before the tab was replaced) while the other
-# browsers worked; a page that has not answered in 20 s is broken, not slow.
-STEP_TIMEOUT = int(os.environ.get("STEP_TIMEOUT", "20"))
-VERIFY_TIMEOUT = 12  # the re-read after an action: a page that cannot be read again this fast is stuck
-COLLECT_TIMEOUT = 75  # collect follows a list page by page and fetch downloads a file: more than one page load
+STEP_TIMEOUT = 45  # seconds for one page read or one browser action: a hung page must not freeze the whole run
 # How many past turns stay word for word; older ones keep the reasoning and drop the page text. Each full turn resends
-# a page of up to 14,000 characters and the whole case file on every call, and uncached input is ~88% of a run's
-# cost (run a176359f: $0.154 of $0.176). The current page and the results of the last actions are always there, and
-# earlier turns keep their results and address, so none is needed in full. FULL_TURNS=1 or 2 brings back the
-# earlier settings for comparison.
-FULL_TURNS = int(os.environ.get("FULL_TURNS", "0"))
+# a page of up to 14,000 characters on every call, and input tokens are most of the run's cost (the provider's prompt
+# cache hits only now and then). FULL_TURNS=2 brings back the earlier setting for comparison.
+FULL_TURNS = int(os.environ.get("FULL_TURNS", "1"))
 # How many past turns are kept at all; older ones shrink to their thought. Every kept turn costs ~250 tokens on every
 # later call, and the ERP agent runs 40-60 turns: in run 4876a0ad its calls averaged ~14k input tokens, about half of
-# them old history (ERP was 46% of the run's input). Only the system prompt is reliably cached (run a176359f: every
-# call showed the same ~4.9k cached tokens), so history is paid in full on every call. HISTORY_TURNS=0 keeps every
-# turn, as before.
-HISTORY_TURNS = int(os.environ.get("HISTORY_TURNS", "6"))
-EARLIER_THOUGHTS = 16  # older turns shown as one line each; before this cap a 46-turn agent sent ~40 of them every call
-# Signs that a tab itself is broken rather than a page being slow: such a failure gets a fresh tab at once.
-HARD_FAILURE = ("detached", "ERR_ABORTED", "Target closed", "Target page", "has been closed", "could not re-read")
-# A message the page announces after a press that reports a problem, not a confirmation (enter_positions keeps
-# going past "saved" notices but stops at these).
-ERROR_ALERT = re.compile(r"fehler|ungültig|unzulässig|nicht möglich|nicht erlaubt|pflicht|erforderlich|fehlt|bitte "
-                         r"(?:eine|einen|ein|geben|wählen)|error|invalid|required|missing|not allowed|not possible|"
-                         r"must |failed|rejected|abgelehnt", re.I)
+# them old history (ERP was 46% of the run's input). HISTORY_TURNS=0 keeps every turn, as before.
+HISTORY_TURNS = int(os.environ.get("HISTORY_TURNS", "10"))
 
 
 def _thought(reply: str) -> str:
@@ -96,12 +79,6 @@ def _thought(reply: str) -> str:
         text = reply
     return " ".join(text.split())[:200] or "(no thought)"
 NAVIGATING = {"click", "goto", "back", "reload", "login", "collect", "fetch", "steps"}
-REPEATABLE_NOT = {"fill", "select", "set", "enter_positions"}  # refused when repeated on an unchanged page (see run)
-BLOCKED = ("BLOCKED: you sent exactly these actions on this same page three times and they changed nothing, so they "
-           "were not run again. Do something different: read the page's messages and fix what they report. If the "
-           "form is out of step (fields empty again, an action \"not possible in this step\"), reload the page or go "
-           "back to the first choice of this position and redo it. To save a position use the control that moves on "
-           "to the next one, not one that adds another, empty line.")
 STEPS_LIMIT, STEPS_TIMEOUT = 30, 240  # one "steps" action: at most this many steps, and seconds in all
 ALERT = re.compile(r"\((?:alert|status)\)[^\n]*")  # a message the page announces to screen readers (Tab.observe)
 CONTROL = re.compile(r'\[(\d+)\] (?:\(in collapsed menu\) )?(select|input(?:\(\w+\))?|button|checkbox|radio|link|clickable|switch) "([^"]*)"([^\[]*)')
@@ -180,7 +157,6 @@ class Agent:
             "directly with goto, or try a different way. If you already have the answer, finish with done now.")
         self._circle_hint: str | None = None  # a sanity check that may veto a browser action before it runs (sanity.py)
         self.turns: list[dict] = []
-        self.opening: list[str] = []  # what was done for the agent before its first turn (agent.py: opened, logged in)
         self.page_seen = ""
         self.held: tuple[str, str] | None = None  # a collected or fetched document, until the agent moves on
         self.coverage = Ledger()  # what this agent really opened, typed and followed (coverage.py)
@@ -205,10 +181,8 @@ class Agent:
         older = self.turns[:len(self.turns) - len(kept)]
         earlier = ""
         if older:  # one line per older turn: what the agent thought, so it still knows what it tried
-            shown = older[-EARLIER_THOUGHTS:]
-            earlier = ("EARLIER IN THIS TASK (your thoughts, oldest first; their pages and results are no longer shown"
-                       + (f"; {len(older) - len(shown)} older turns left out" if len(older) > len(shown) else "") + ")\n"
-                       + "\n".join(f"- {_thought(turn['assistant'])}" for turn in shown) + "\n\n")
+            earlier = ("EARLIER IN THIS TASK (your thoughts, oldest first; their pages and results are no longer shown)\n"
+                       + "\n".join(f"- {_thought(turn['assistant'])}" for turn in older) + "\n\n")
         for index, turn in enumerate(kept):
             recent = index >= len(kept) - FULL_TURNS
             content = turn["user"] if recent else turn["short"]
@@ -233,28 +207,20 @@ class Agent:
         reply = await llm.chat_json(messages, think=True, label=f"{self.name}:escalated")
         return reply or await llm.chat_json(self._messages(user), think=self.think, label=self.name)
 
-    async def _steps(self, steps: list, errors_only: bool = False, limit: int = STEPS_LIMIT) -> str:
+    async def _steps(self, steps: list) -> str:
         """Runs a chain of label-addressed steps across page reloads (the "steps" action). Every step is turned into
-        the plain action it stands for and passes the same guard as a fill, select, set or click the model sends.
-        A press that brings a new announcement stops the chain so the model can read it; with `errors_only` (the
-        clerk's enter_positions) only an announcement that reads as a problem stops it, a "saved" notice does not."""
+        the plain action it stands for and passes the same guard as a fill, select, set or click the model sends."""
         done: list[str] = []
-        for number, step in enumerate(steps[:limit], start=1):
+        for number, step in enumerate(steps[:STEPS_LIMIT], start=1):
             if not isinstance(step, dict):
                 continue
             label = str(step.get("press") or step.get("field") or "")
-            kinds = (("button", "link", "clickable") if "press" in step
-                     else ("select", "input", "checkbox", "radio", "switch"))
             page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
-            aid, kind = find_control(page, label, kinds)
-            if aid is None and "no control labelled" in kind:
-                # A cascade can unlock its next control a moment after the apply that loads it: look once more.
-                await asyncio.sleep(0.6)
-                page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
-                aid, kind = find_control(page, label, kinds)
             if "press" in step:
+                aid, kind = find_control(page, label, ("button", "link", "clickable"))
                 action = {"do": "click", "id": aid}
             else:
+                aid, kind = find_control(page, label, ("select", "input", "checkbox", "radio", "switch"))
                 value = step.get("value", "")
                 if kind == "select":
                     action = {"do": "select", "id": aid, "value": str(value)}
@@ -274,8 +240,6 @@ class Agent:
             if action["do"] == "click":  # a press can bring an error message: stop there instead of filling on blindly
                 after = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
                 new = [a for a in ALERT.findall(after) if a not in alerts_before]
-                if errors_only:
-                    new = [a for a in new if ERROR_ALERT.search(a)]
                 if new:  # an error or a confirmation: the model reads which (run 012496d3: a "saved" notice taken
                     # for an error made the clerk enter the same position again, which the form refused)
                     return (f"ran {len(done)} of {len(steps)} steps: " + "; ".join(done) +
@@ -319,17 +283,6 @@ class Agent:
             return None
         return self.coverage.gate(str(action.get("question", "")).strip("[] "), status)
 
-    async def _renew(self, results: list[str]) -> bool:
-        """Carry on in a fresh tab (browser_env.Tab.renew); the outcome goes to the model with the turn's results."""
-        self.held = None
-        try:
-            renewed = await asyncio.wait_for(self.tab.renew(), STEP_TIMEOUT)
-            results.append("this tab kept failing to load, so it was replaced by a fresh one: " + renewed)
-            return True
-        except Exception as error:  # noqa: BLE001
-            results.append(f"replacing the stuck tab failed: {str(error)[:150]}")
-            return False
-
     async def _alive(self) -> bool:
         try:
             return bool(await self.tab.page.main_frame.evaluate("() => document.querySelectorAll('[data-aid]').length > 0"))
@@ -337,8 +290,7 @@ class Agent:
             return False
 
     async def run(self) -> dict:
-        results: list[str] = list(self.opening)
-        self.opening = []
+        results: list[str] = []
         outcome = {"done": False, "summary": "", "answer": None, "steps": 0}
         self.log(f"starting at {self.tab.base_url}")
         if self.tab.page.url in ("", "about:blank"):
@@ -349,30 +301,16 @@ class Agent:
         repeats, last_signature, failures = 0, "", 0
         seen_signatures: dict[str, int] = {}
         stuck = 0  # page reads and navigations in a row that timed out or failed: the tab may be broken
-        hard = False  # this turn showed the tab itself is broken (detached frame, aborted load, no re-read)
-        fresh: str | None = None  # the re-read after the last action of a turn, which is the page the next turn sees
         while self.steps < self.max_steps and time.time() < self.deadline:
             self.steps += 1
             clock = time.time()
-            if fresh is not None:  # read a moment ago, after the last action: reading it again only costs time
-                page, fresh = fresh, None
-            else:
-                try:
-                    page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
-                except asyncio.TimeoutError:
-                    # A page that cannot even be read in this time is a broken tab (run a176359f: 45 s read, then
-                    # a reload that failed, then a fresh tab that worked at once): replace it before the model turn.
-                    page = f"(the page did not finish loading within {STEP_TIMEOUT} s; reload it or go elsewhere)"
-                    renewed = await self._renew(results)
-                    if renewed:
-                        try:
-                            page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
-                        except Exception:  # noqa: BLE001
-                            stuck += 1
-                    else:
-                        stuck += 1
-                except Exception as error:  # noqa: BLE001
-                    page = f"(the page could not be read: {str(error)[:200]})"
+            try:
+                page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+            except asyncio.TimeoutError:
+                stuck += 1
+                page = f"(the page did not finish loading within {STEP_TIMEOUT} s; reload it or go elsewhere)"
+            except Exception as error:  # noqa: BLE001
+                page = f"(the page could not be read: {str(error)[:200]})"
             self.coverage.saw(page)
             self.page_seen = page  # the page the model answers to: its ids and link targets (file_each)
             results.extend(self.tab.take_events())
@@ -456,13 +394,7 @@ class Agent:
             repeats = repeats + 1 if signature == last_signature else max(0, seen_signatures[signature] - 1)
             last_signature = signature
 
-            # An agent that cannot be sent idle (the bid clerk) and sends exactly the same actions on the same page a
-            # third time gets them refused: test run 10def205 filled the same amounts and pressed the same button 40+
-            # times on an unchanged page, through hints and an escalated turn, until its step cap.
-            blocked = (self.idle is None and repeats >= 2
-                       and any(isinstance(a, dict) and a.get("do") in REPEATABLE_NOT for a in actions))
             results, finished, moved = [], None, False
-            hard = False
             if self._circle_hint:  # shown with the results of this turn's actions, at the top of the next turn
                 results.append(self._circle_hint)
                 self._circle_hint = None
@@ -470,16 +402,9 @@ class Agent:
                 if not isinstance(action, dict):
                     continue
                 do = action.get("do")
-                fresh = None  # only a re-read after the turn's very last action shows the page as it is now
                 if do == "done":
                     finished = action
                     break
-                if blocked and do not in ("reload", "wait", "back") and (do in NAVIGATING or do in REPEATABLE_NOT):
-                    results.append(BLOCKED)
-                    blocked = None  # said once per turn; the rest of the repeated actions are dropped silently
-                    continue
-                if blocked is None and (do in NAVIGATING or do in REPEATABLE_NOT):
-                    continue
                 if do == "wait":
                     await asyncio.sleep(2)
                     results.append("waited two seconds")
@@ -502,12 +427,10 @@ class Agent:
                     results.append(veto)
                     continue
                 before = self.tab.page.url
-                limit = (STEPS_TIMEOUT if do == "steps" else COLLECT_TIMEOUT if do in ("collect", "fetch")
-                         else STEP_TIMEOUT)
                 try:
-                    result = await asyncio.wait_for(self._browser(action), limit)
+                    result = await asyncio.wait_for(self._browser(action), STEPS_TIMEOUT if do == "steps" else STEP_TIMEOUT)
                 except asyncio.TimeoutError:
-                    result = f"{do} took longer than {limit} s and was stopped; the page may be stuck"
+                    result = f"{do} took longer than {STEP_TIMEOUT} s and was stopped; the page may be stuck"
                 except Exception as error:  # noqa: BLE001
                     result = f"{do} failed: {str(error)[:200]}"
                 results.append(result)
@@ -521,8 +444,7 @@ class Agent:
                 # report rather than assuming the dispatch took effect.
                 if do not in ("collect", "fetch"):
                     try:
-                        after = await asyncio.wait_for(self.tab.observe(), VERIFY_TIMEOUT)
-                        fresh = after
+                        after = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
                         changed = state_fingerprint(page) != state_fingerprint(after)
                         if changed:
                             self.coverage.moved()
@@ -531,26 +453,26 @@ class Agent:
                             results.append(f"verification: {do} caused no visible page change; inspect the control "
                                            "or try a different recovery path instead of repeating it blindly")
                     except asyncio.TimeoutError:
-                        results.append(f"verification: could not re-read the page within {VERIFY_TIMEOUT} s")
-                        hard = True
+                        results.append(f"verification: could not re-read the page within {STEP_TIMEOUT} s")
                     except Exception as error:  # noqa: BLE001
                         results.append(f"verification: could not re-read the page ({str(error)[:160]})")
-                        hard = True
                 if do in NAVIGATING:
                     failed = any(sign in str(result) for sign in ("Timeout", "timed out", "took longer", "detached", "ERR_ABORTED"))
                     stuck = stuck + 1 if failed else 0
-                    hard = hard or (failed and any(sign in str(result) for sign in HARD_FAILURE))
                 if do in ("collect", "fetch"):
                     self.held = (self.tab.document, self.tab.document_source)
                 elif do in NAVIGATING:
                     self.held = None
                 if do in NAVIGATING or self.tab.page.url != before or not await self._alive():
                     moved = True
-            # The same tab failed twice in a row, or once in a way that shows the tab itself is broken: carry on in a
-            # fresh one at once (browser_env.Tab.renew) instead of waiting for it to time out again.
-            if stuck >= 2 or (hard and stuck >= 1):
-                stuck, hard, fresh = 0, False, None
-                await self._renew(results)
+            if stuck >= 2:  # the same tab failed twice in a row: carry on in a fresh one (browser_env.Tab.renew)
+                stuck = 0
+                try:
+                    renewed = await asyncio.wait_for(self.tab.renew(), STEP_TIMEOUT)
+                    results.append("this tab kept failing to load, so it was replaced by a fresh one: " + renewed)
+                except Exception as error:  # noqa: BLE001
+                    results.append(f"replacing the stuck tab failed: {str(error)[:150]}")
+                self.held = None
             self.log(f"(read {read_s:.1f}s, model {model_s:.1f}s, act {time.time() - clock:.1f}s) {thought} | "
                      f"{json.dumps(actions, ensure_ascii=False)[:400]} | " + " ; ".join(r[:160] for r in results))
             if repeats >= 2:
@@ -570,7 +492,6 @@ class Agent:
                 results.append("You were sent idle because you kept repeating the same steps without progress. "
                                "Work on what the case file news asks for, by a different way than before.")
             if finished is not None:
-                fresh = None  # the page may change while the agent waits (a session can expire): read it again
                 outcome.update(summary=str(finished.get("summary", "")), answer=finished.get("answer"))
                 news = await self.idle("done") if self.idle else None
                 if news is None:

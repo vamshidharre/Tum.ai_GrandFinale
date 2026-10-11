@@ -38,11 +38,7 @@ class History(unittest.TestCase):
         self.assertNotIn("SHORT 0", text)
         self.assertNotIn("FULL PAGE 0", text)
         self.assertIn("SHORT 5", text)  # the oldest kept turn, short
-        if worker.FULL_TURNS:
-            self.assertIn(f"FULL PAGE {worker.HISTORY_TURNS + 4}", text)  # the last turn in full
-        else:  # no earlier page in full: the current one is in the new message
-            self.assertNotIn("FULL PAGE", text)
-            self.assertIn(f"SHORT {worker.HISTORY_TURNS + 4}", text)
+        self.assertIn(f"FULL PAGE {worker.HISTORY_TURNS + 4}", text)  # the last turn in full
         self.assertEqual([m["role"] for m in messages[1:]], ["user", "assistant"] * worker.HISTORY_TURNS + ["user"])
 
     def test_history_grows_slowly_after_the_cap(self):

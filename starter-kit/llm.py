@@ -24,15 +24,6 @@ CALL_TIMEOUT = 150  # seconds: a model that scaled to zero is slow to answer its
 WARM_TIMEOUT = 120  # a quick call (thinking off) this late once the model is awake is stuck: ask again. 75 s cut off
 # a first turn with a large prompt under load (submit agent, sandbox test run 54c78c38: 85 s lost to the retry).
 # Calls with thinking on (fact extraction) keep CALL_TIMEOUT: under load they legitimately take longer.
-# A quick call (thinking off) that has not answered after this many seconds gets a second, identical request, and
-# the first reply wins: in sandbox runs single calls hung for the whole WARM_TIMEOUT (2 min each, up to 18 per run)
-# while the same request asked again answered in seconds. p95 of a navigation turn is ~3.5 s; a long transcription
-# (extraction, larger max_tokens) gets more time before it is doubled. Only once the model is awake.
-HEDGE_AFTER, HEDGE_AFTER_LONG = float(os.environ.get("HEDGE_AFTER", "12")), 40.0
-# Only a call that is slow for the model as it is right now is doubled: when every call is slow (an overloaded model,
-# a local run at 5-30 s a call), a second request only adds load. The wait is at least four times the median of the
-# latest quick calls.
-RECENT: list[float] = []
 MAX_TOKENS_CEILING = 16000  # a reply cut off by its token limit is asked again with twice the room, up to this
 PERMANENT = (400, 401, 403, 404, 413, 422)  # asking again rarely helps: one more try, then give up
 # The hosted Qwen's simulated prices in USD per million tokens, for the estimate in `summary`.
@@ -135,68 +126,31 @@ async def chat_json(messages: list[dict], *, think: bool = True, max_tokens: int
         print(f"[llm] {label or 'call'}: {missing} is not set, no model to ask", file=sys.stderr)
         return {}
     conversation = messages
-    kind = BY_LABEL.setdefault(label.split(":")[0] if label.startswith("extract") else (label or "call"), [0, 0.0, 0])
-
-    async def one_request(conversation: list[dict], max_tokens: int, think: bool):
-        async with gate:
-            STATS["calls"] += 1
-            started = time.monotonic()
-            try:
-                if provider == "openai":
-                    return await client.chat.completions.create(
-                        model=OPENAI_MODEL, messages=conversation, max_completion_tokens=max_tokens,
-                        response_format={"type": "json_object"})
-                return await client.chat.completions.create(
-                    model=MODEL, messages=conversation, temperature=0, max_tokens=max_tokens,
-                    response_format={"type": "json_object"},
-                    extra_body={"chat_template_kwargs": {"enable_thinking": think}})
-            finally:
-                spent = time.monotonic() - started
-                STATS["seconds"] += spent
-                kind[0] += 1
-                kind[1] += spent
-
-    async def hedged(conversation: list[dict], max_tokens: int, think: bool):
-        """The reply to the first of up to two identical requests that answers (see HEDGE_AFTER)."""
-        loop = asyncio.get_running_loop()
-        end = loop.time() + (WARM_TIMEOUT if _warm["done"] and not think else CALL_TIMEOUT)
-        hedge = None if think or not _warm["done"] else (HEDGE_AFTER_LONG if max_tokens > 6000 else HEDGE_AFTER)
-        if hedge is not None and len(RECENT) >= 5:
-            hedge = max(hedge, 4 * sorted(RECENT)[len(RECENT) // 2])
-        sent = loop.time()
-        tasks = {asyncio.ensure_future(one_request(conversation, max_tokens, think))}
-        error: BaseException | None = None
-        try:
-            while tasks:
-                wait = end - loop.time()
-                if hedge is not None and len(tasks) == 1 and not error:
-                    wait = min(wait, hedge)
-                if wait <= 0:
-                    raise asyncio.TimeoutError
-                done, _ = await asyncio.wait(tasks, timeout=wait, return_when=asyncio.FIRST_COMPLETED)
-                for task in done:
-                    tasks.discard(task)
-                    if task.exception() is None:
-                        if not think and max_tokens <= 6000:  # a quick call: what "slow" means right now
-                            RECENT.append(loop.time() - sent)
-                            del RECENT[:-30]
-                        return task.result()
-                    error = task.exception()
-                if not done and hedge is not None and len(tasks) == 1 and loop.time() < end:
-                    print(f"[llm] {label or 'call'}: no reply after {hedge:.0f} s; asking a second time", file=sys.stderr)
-                    STATS["hedged"] = STATS.get("hedged", 0) + 1
-                    tasks.add(asyncio.ensure_future(one_request(conversation, max_tokens, think)))
-                    hedge = None
-            raise error or asyncio.TimeoutError()
-        finally:
-            for task in tasks:
-                task.cancel()
-
     for attempt in range(1, ATTEMPTS + 1):
         permanent = False
         try:
-            reply = await hedged(conversation, max_tokens, think)
-            _warm["done"] = True
+            async with gate:
+                STATS["calls"] += 1
+                started = time.monotonic()
+                try:
+                    if provider == "openai":
+                        request = client.chat.completions.create(
+                            model=OPENAI_MODEL, messages=conversation, max_completion_tokens=max_tokens,
+                            response_format={"type": "json_object"})
+                    else:
+                        request = client.chat.completions.create(
+                            model=MODEL, messages=conversation, temperature=0, max_tokens=max_tokens,
+                            response_format={"type": "json_object"},
+                            extra_body={"chat_template_kwargs": {"enable_thinking": think}})
+                    reply = await asyncio.wait_for(request,
+                        WARM_TIMEOUT if _warm["done"] and not think else CALL_TIMEOUT)
+                    _warm["done"] = True
+                finally:
+                    spent = time.monotonic() - started
+                    STATS["seconds"] += spent
+                    kind = BY_LABEL.setdefault(label.split(":")[0] if label.startswith("extract") else (label or "call"), [0, 0.0, 0])
+                    kind[0] += 1
+                    kind[1] += spent
             _count(reply.usage, provider)
             kind[2] += getattr(reply.usage, "prompt_tokens", 0) or 0
             choice = reply.choices[0]
@@ -241,5 +195,4 @@ def summary() -> str:
             f"({STATS['cached_tokens']} cached), {STATS['completion_tokens']} completion tokens, "
             f"{STATS['seconds']:.0f} s in calls, about ${cost:.4f}; by caller: "
             + ", ".join(f"{name} {calls}x/{seconds:.0f}s/{tokens // 1000}k in" for name, (calls, seconds, tokens) in sorted(BY_LABEL.items()))
-            + (f"; openai tokens {STATS['openai_tokens']}" if STATS.get("openai_tokens") else "")
-            + (f"; asked a second time {STATS['hedged']}x" if STATS.get("hedged") else ""))
+            + (f"; openai tokens {STATS['openai_tokens']}" if STATS.get("openai_tokens") else ""))

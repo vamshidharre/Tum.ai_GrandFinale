@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import agent  # noqa: E402
-from agent import Team, batch_hint, questions_for_site  # noqa: E402
+from agent import Team, questions_for_site  # noqa: E402
 
 
 class FakeCase:
@@ -114,33 +114,6 @@ class QuestionRouting(unittest.IsolatedAsyncioTestCase):
 
         case.update(("material:REQ-1", "Find a matching ERP material."))
         self.assertIn("material:REQ-1", await waiting)
-
-
-class BatchHint(unittest.TestCase):
-    """The file_each nudge: suggest batching once after repeated one-by-one filings of one kind."""
-
-    def test_fires_once_after_three_same_kind_filings(self):
-        counter: dict = {}
-        self.assertEqual(batch_hint(counter, "material", True), "")
-        self.assertEqual(batch_hint(counter, "material", True), "")
-        hint = batch_hint(counter, "material", True)
-        self.assertIn("file_each", hint)
-        self.assertEqual(batch_hint(counter, "material", True), "")  # only once per streak
-
-    def test_a_different_kind_resets_the_streak(self):
-        counter: dict = {}
-        batch_hint(counter, "material", True)
-        batch_hint(counter, "material", True)
-        self.assertEqual(batch_hint(counter, "price_conditions", True), "")
-        self.assertEqual(batch_hint(counter, "material", True), "")
-        self.assertEqual(batch_hint(counter, "material", True), "")
-        self.assertIn("file_each", batch_hint(counter, "material", True))
-
-    def test_nothing_filed_or_no_kind_is_silent(self):
-        counter: dict = {}
-        self.assertEqual(batch_hint(counter, "material", False), "")
-        self.assertEqual(batch_hint(counter, "", True), "")
-        self.assertEqual(counter, {})
 
 
 if __name__ == "__main__":

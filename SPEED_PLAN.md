@@ -1,5 +1,7 @@
 # QuoteCraft speed plan — tracking table
 
+> **Superseded on 11 Oct (10:20):** `starter-kit/` was reset to the exact best package (run a176359f). The step-by-step plan is now section 4 of `BEST_RUN_TIMING.md`; the rows below record what was tried before.
+
 Goal: **100 quality in under 5:00 (top 10) at lower cost**, keeping the system agentic (the model chooses where to
 go, what to search, what matters; code only helps). Work happens on branch `claude/tier1-speed` in the worktree
 `D:\Personal_Projects\QuoteCraft-tier1` (package: `starter-kit/`). One change at a time, one test run each; a run
