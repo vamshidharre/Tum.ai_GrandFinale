@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 
@@ -26,7 +27,7 @@ from calculator import calculate_bid
 import sanity
 import validate
 from casefile import SHAPES, CaseFile, read_context
-from worker import ACTIONS_HELP, Agent
+from worker import ACTIONS_HELP, CONTROL, Agent, find_control
 
 RESTART_MIN_SECONDS = 120  # an unfinished agent is restarted only while this much investigation time is left
 
@@ -45,12 +46,20 @@ Case-file actions:
       File the document in front of you (the current page, or the document you just collected or fetched) as
       evidence. Its facts are then extracted into the shared case file and reported back to you. Kinds:
         positions         the tender's bill of quantities
-        clarifications    answers of the tender's bidder Q&A
+        clarifications    answers of the tender's bidder Q&A, and change or amendment notices to the tender
         revisions         the revision history of the buyer's technical specification
         requirements      the requirement details of one specification revision
         material          ERP master data of materials: technical attributes, status, planning, stock
         price_conditions  ERP price conditions of one material: validity, currency, quantity scales
-        mail              an opened mail message
+        mail              an opened mail message, or a register of approvals/releases (one record per row)
+  {{"do": "file_each", "links": [12, 15, 18], "kind": "<kind>", "tabs": [{{"tab": "<tab label>", "kind": "<kind>"}}]}}
+      Open each record you name from the list in front of you (up to 12 links by id) and file it with keep as
+      "kind"; "tabs" (optional) also opens and files those tabs of every record, each with its own kind. A tab can
+      also be a path of controls clicked in order, the page at its end being filed:
+      {{"path": ["<label 1>", "<label 2>", "<label 3>"], "kind": "<kind>"}} (labels or a part of them, as the
+      record page shows them). You come back to the list with a report of what was filed. Use it when a result list
+      holds several records you need: walk the first record yourself to learn which tabs and paths hold its facts,
+      then file the others with one file_each giving the same tabs and paths.
   {{"do": "answer", "question": "<id>", "status": "complete" | "absent", "note": "..."}}
       Close an open question: "complete" when all its evidence is filed (needed for lists that only you know to be
       complete), "absent" when you searched properly and what is asked for does not exist.
@@ -58,29 +67,28 @@ Case-file actions:
 How to work
 - Every turn starts with the case file and the OPEN QUESTIONS. Work on the questions your website can answer;
   the other agents handle the rest. Facts they file show up in the case file and can open new questions for you.
+- The OPEN QUESTIONS shown to you are the work assigned to your website. Do not search for another website's
+  records. If none are open, finish with done; the coordinator will call you again when your website gets new work.
 - You remember only the page in front of you: file a relevant page with keep BEFORE you leave it. keep files the
   whole document, also what was cut from your view. File a document once, with the right kind. Facts on a page only
   enter the CASE FILE when you call keep on that page; reading a value in your thought without calling keep leaves
   the case file unchanged.
 - File pages that state the facts themselves (an opened document, record or message), not menus or hit lists.
-  For a paged list or document that matters, use collect with max_pages 30 so that no page is missed, then keep
-  it. If collect reports that the list is incomplete, collect again from its last page until it reaches the end.
-  For stock availability, drill down from plant/physical summaries into storage locations to view freely available
+  For a paged list or document that matters, use collect so that no page is missed, then keep it. For stock
+  availability, drill down from plant/physical summaries into storage locations to view freely available
   (unrestricted) stock excluding blocked/inspection stock, and file that page with keep.
 - The websites hold traps: superseded revisions, look-alike records for other tender references, drafts and
   previews, blocked materials, future-dated records, values in the wrong unit or number format. Check dates,
   references, senders and status marks before you rely on a record, and follow the brief's rules on which one
   counts. When in doubt, file both and let the facts decide.
+- Do not reject a candidate record yourself (for example a material whose stroke seems to differ): file every
+  candidate the question names, with file_each when a list shows several of them (after you have seen one record
+  and know which of its tabs hold the facts), else with keep. The case file matches them against the requirement values, which can still
+  change when amendments or reserves are filed.
 - Follow the search hints a website gives. If a search returns nothing or too much, change the search terms.
 - When a question asks for every item in a list, inspect its page controls and use collect on the control that
   advances that list before filing it. Check the resulting page count or end state; do not mark a list complete after
   seeing only its first page. If the list is inside an embedded document, use the controls belonging to that document.
-- For every ERP catalogue-candidate audit, search the requested catalogue group, collect every results page before
-  choosing a record, then open and file the master data for every returned candidate. Do this even after one record
-  looks like a match: a blocked, incomplete, or less suitable first result is not evidence that the remaining file
-  numbers do not matter. Mark the audit complete only after the whole result list has ended and every candidate has
-  its technical data and sales status on file. The calculator, not a guessed first result, decides which filed record
-  qualifies.
 - For mailbox questions, search relevant folders separately when mailbox search covers only the current folder;
   include the archive when looking for historical or latest records. If a query is too broad or returns nothing,
   refine the terms and try again. Open candidate messages and file the message itself, not only its hit row.
@@ -100,11 +108,32 @@ class Team:
         self.case, self.names, self.deadline = case, set(names), deadline
         self.idle: set[str] = set()
         self.finished = asyncio.Event()
+        self.woken: dict[str, float] = {}  # when an agent was last woken for finished reading (at most every 30 s)
+
+    def release(self, name: str, candidates: set[str]) -> None:
+        """A routed agent (ERP or mail) went idle leaving `candidates` open and nothing is being read any more: those
+        go to every agent (RELEASED), and the others are woken by a case-file change. Questions that turn up while it
+        is idle are its own work (it is woken for them), so only the ones open when it went idle are candidates."""
+        if self.case.pending or site_role(name) is None:
+            return
+        still = {qid for qid, _ in self.case.questions()} & candidates
+        fresh = still - RELEASED
+        if fresh:
+            RELEASED.update(fresh)
+            print(f"[{name}] left open, now offered to every agent: {', '.join(sorted(fresh))}", flush=True)
+            bump = getattr(self.case, "_bump", None)
+            if bump:
+                bump()
 
     def hook(self, name: str):
         async def hold(why: str) -> str | None:
+            before = {qid for qid, _ in questions_for_site(name, self.case.questions())}
+            self.release(name, before)
             version = self.case.version
-            before = {qid for qid, _ in self.case.questions()}
+            # Documents still being read when the agent went idle: once one of them is done, the agent is woken if
+            # questions are still open. Sandbox run 024bd2ac: the ERP agent went idle "until the requirements are
+            # read" with its material questions already open; they were never new, so it slept for 400 s.
+            reading = self.case.pending
             self.idle.add(name)
             try:
                 while not self.finished.is_set() and time.time() < self.deadline:
@@ -112,10 +141,17 @@ class Team:
                     if self.finished.is_set():
                         break
                     if changed:
+                        self.release(name, before)
                         version = self.case.version
-                        fresh = {qid for qid, _ in self.case.questions()} - before
+                        fresh = {qid for qid, _ in questions_for_site(name, self.case.questions())} - before
                         if fresh or self.case.news.get(name):
                             return "The case file has news" + (f"; new open questions: {', '.join(sorted(fresh))}" if fresh else "") + "."
+                        still_open = {qid for qid, _ in questions_for_site(name, self.case.questions())}
+                        rested = time.time() - self.woken.get(name, 0.0) >= 30
+                        if reading and self.case.pending < reading and still_open and rested:
+                            self.woken[name] = time.time()
+                            return ("Documents that were still being read are now in the case file. Open questions: "
+                                    f"{', '.join(sorted(still_open))}. Work on those your website can answer.")
                     elif self.idle == self.names and self.case.pending == 0:
                         self.finished.set()
                 return None
@@ -124,12 +160,110 @@ class Team:
         return hold
 
 
+FILE_EACH_LIMIT = 12  # records per file_each action
+FILE_EACH_SECONDS = 150  # and seconds for all of them; the agent continues from the list afterwards
+BATCH_NUDGE_AFTER = 3  # same-kind pages filed one by one before file_each is suggested once
+
+
+def batch_hint(counter: dict, kind: str, filed: bool) -> str:
+    """Suggest the file_each batch action once an agent files the same kind of page one by one.
+
+    `counter` maps kind -> consecutive filings (mutated). Returns the hint text, or "". Fires
+    exactly once per streak so it costs one line, not a nag on every turn. The model still
+    decides; nothing here assumes what any website looks like."""
+    if not filed or not kind:
+        return ""
+    counter[kind] = counter.get(kind, 0) + 1
+    for other in [key for key in counter if key != kind]:
+        counter.pop(other, None)
+    if counter[kind] == BATCH_NUDGE_AFTER:
+        return ("; you have now filed several pages of this kind one by one — if the list they came "
+                "from still shows more records of the same kind, go back to that list and file the "
+                "rest together with one file_each (naming the records and the tabs that hold the facts)")
+    return ""
+
+
+async def file_each(tab, action: dict, file, saw, deadline: float, seen: str = "") -> str:
+    """The file_each action: the model names several records on the page in front of it (links by id) and, if each
+    record has tabs that matter, the tabs by label; code opens every record and tab and files it with the kind the
+    model gave, then goes back to the list. The model chooses the records and kinds, as with keep; this only saves
+    one model turn per page opened (the ERP agent needed 58-85 turns per run, each resending its whole prompt)."""
+    kind = str(action.get("kind") or "")
+    tabs = [t for t in (action.get("tabs") or []) if isinstance(t, dict) and (t.get("tab") or t.get("path"))]
+    links = [str(i).strip("[] ") for i in (action.get("links") or [])][:FILE_EACH_LIMIT]
+    if not links or not kind:
+        return 'file_each needs "links" (ids of the records on this page) and "kind"'
+    home = tab.page.url
+    # The ids and link targets of the page the model saw when it chose (`seen`); a fresh read could number the
+    # elements differently (a list that loads or reorders), and the wrong record would be filed.
+    page = seen or await tab.observe()
+    targets = {m.group(1): (m.group(3), (re.search(r"->\s*(\S+)", m.group(4)) or [None, None])[1])
+               for m in CONTROL.finditer(page) if m.group(2) in ("link", "clickable")}
+    first = True
+    stop_at = min(deadline, time.time() + FILE_EACH_SECONDS)
+    report = []
+    for aid in links:
+        if time.time() > stop_at:
+            report.append(f"[{aid}] not opened: time for this action is up; file the rest with another file_each")
+            continue
+        label, href = targets.get(aid, (None, None))
+        if label is None:
+            report.append(f"[{aid}] is not a link on this page")
+            continue
+        if not href and not first:  # a link without an address: find it again by its label on the list as it is now
+            if tab.page.url != home:
+                await tab.goto(home)
+            aid_now, why = find_control(await tab.observe(), label, ("link", "clickable"))
+            if aid_now is None:
+                report.append(f'[{aid}] "{label}" not opened: {why}')
+                continue
+            aid = aid_now
+        first = False
+        opened = await (tab.goto(href) if href else tab.click(aid))
+        record = await tab.observe()
+        saw(record)
+        if tab.page.url == home:  # nothing opened (a control that filters or sorts the list): nothing to file
+            report.append(f'[{aid}] "{label}" did not open a record ({opened[:60]})')
+            continue
+        filed = [f"{kind}: {file(kind, tab.document, tab.document_source)[:120]}"]
+        record_url = tab.page.url
+        for extra in tabs:
+            # A tab, or a path of controls clicked one after another (a stock overview, then a plant, then a
+            # storage location); the page at its end is filed. Every control is looked up by its label on the page
+            # as it is then (ids change with every page). If the first one is not on the page, back to the record.
+            path = [str(step) for step in (extra.get("path") or [extra.get("tab")]) if step][:6]
+            name = " > ".join(path)
+            missing = None
+            for number, step in enumerate(path):
+                now = await tab.observe()
+                control, why = find_control(now, step, ("link", "button", "clickable"))
+                if control is None and number == 0 and tab.page.url != record_url:
+                    await tab.goto(record_url)
+                    now = await tab.observe()
+                    control, why = find_control(now, step, ("link", "button", "clickable"))
+                if control is None:
+                    missing = f'"{name}": {why}'
+                    break
+                href_tab = next((m.group(4) for m in CONTROL.finditer(now) if m.group(1) == control), "")
+                target = re.search(r"->\s*(\S+)", href_tab or "")
+                await (tab.goto(target.group(1)) if target else tab.click(control))
+            if missing:
+                filed.append(missing)
+                continue
+            saw(await tab.observe())
+            tab_kind = str(extra.get("kind") or kind)
+            filed.append(f'"{name}" as {tab_kind}: {file(tab_kind, tab.document, tab.document_source)[:120]}')
+        report.append(f'[{aid}] "{label}" ({opened[:60]}): ' + "; ".join(filed))
+    await tab.goto(home)
+    return f"file_each opened {len(links)} record(s) and is back on the list:\n" + "\n".join(report)
+
+
 def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent:
     name = tab.site_id
     system = INVESTIGATOR.format(site=name, url=tab.base_url, brief=case.brief, actions=ACTIONS_HELP)
 
     def briefing() -> str:
-        questions = case.questions()
+        questions = questions_for_site(name, case.questions())
         news = case.take_news(name)
         text = f"CASE FILE\n{case.status()}\n\nOPEN QUESTIONS\n"
         text += "\n".join(f"- [{qid}] {question}" for qid, question in questions) or "(none)"
@@ -143,13 +277,21 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
         return text
 
     agent: Agent
+    batched: dict = {}  # kind -> consecutive one-by-one filings, for the file_each nudge
 
     async def keep(action: dict) -> str:
+        kind = str(action.get("kind", ""))
         document, source = agent.document()
-        res = case.file(str(action.get("kind", "")), document, source, name)
+        res = case.file(kind, document, source, name)
         if res.startswith("this document is already filed"):
             res += "; do not file this same page again — check OPEN QUESTIONS for what is missing on another page, or finish with done"
+        else:
+            res += batch_hint(batched, kind, not res.startswith("there is no document"))
         return res
+
+    async def file_each_action(action: dict) -> str:
+        return await file_each(tab, action, lambda kind, text, source: case.file(kind, text, source, name),
+                               agent.coverage.saw, deadline, agent.page_seen)
 
     async def answer(action: dict) -> str:
         # A completion action can arrive in the same turn as `keep`. Wait for this agent's own
@@ -165,10 +307,56 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
 
     # Navigation runs without the model's thinking: about twice as fast. The facts themselves are read by the
     # extraction calls in casefile.py, which keep thinking on. AGENT_THINK=1 turns it back on for comparison.
-    agent = Agent(name, tab, system, briefing, extra={"keep": keep, "answer": answer}, deadline=deadline,
+    agent = Agent(name, tab, system, briefing, extra={"keep": keep, "file_each": file_each_action, "answer": answer}, deadline=deadline,
                   max_steps=int(os.environ.get("AGENT_MAX_STEPS", "150")), idle=team.hook(name),
-                  think=os.environ.get("AGENT_THINK") == "1")
+                  think=os.environ.get("AGENT_THINK") == "1",
+                  circle_hint="You are going in circles: the same thought keeps coming back without progress. If a "
+                              "link or control does nothing, do not click it again: open its address directly with "
+                              "goto, or use the search form on the page. If the "
+                              "page in front of you is a candidate record, file it with keep now, also when it seems "
+                              "not to match: the case file does the matching, and requirement values can still change "
+                              "when amendments or reserves are filed. If you need facts the other agents have not "
+                              "filed yet, finish with done; you are called again when the case file has news.")
     return agent
+
+
+# Which website plays which role in this run, as the model read it from the brief (solve). The private dataset uses
+# other site names, so routing goes by role first and falls back to the public site names only without one.
+SITE_ROLES: dict[str, str] = {}
+# Routed questions their own agent left open after it finished, with nothing still being read: offered to every agent
+# from then on. The routing assumes the public split of facts (materials in the ERP, keys and approvals in the mail);
+# the private dataset may split them differently, and a routed question must not end up with nobody to answer it.
+RELEASED: set[str] = set()
+
+
+def site_role(site_id: str) -> str | None:
+    """"erp" or "mail" for the agent whose questions are routed, None for one that sees every question."""
+    site = site_id.casefold()
+    for role in ("erp", "mail"):
+        named = (SITE_ROLES.get(role) or "").casefold()
+        if (site == named) if named else (role in site):
+            return role
+    return None
+
+
+def questions_for_site(site_id: str, questions: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Keep specialized mail and ERP agents on questions their portal can resolve (from Vamshidhar's v1 package,
+    sandbox run 44a626ef: 100 in 9.6 min, every agent finished by itself)."""
+    site = site_id.casefold()
+
+    def plays(role: str) -> bool:
+        named = (SITE_ROLES.get(role) or "").casefold()
+        return site == named if named else role in site
+
+    if plays("erp"):
+        prefixes = ("material:", "data:")
+        return [(qid, text) for qid, text in questions if qid.startswith(prefixes) or qid in RELEASED]
+    if plays("mail"):
+        prefixes = ("condition_group:", "packaging_tariff:", "delivery_commitment:", "setup_pool:",
+                    "project_bonus:", "index:", "fx:", "reserve:")
+        return [(qid, text) for qid, text in questions
+                if qid in ("mailbox", "discount") or qid.startswith(prefixes) or qid in RELEASED]
+    return questions
 
 
 async def open_tabs(playwright, sites: list[dict]) -> tuple[list, dict[str, Tab]]:
@@ -182,6 +370,8 @@ async def open_tabs(playwright, sites: list[dict]) -> tuple[list, dict[str, Tab]
     for index, site in enumerate(sites):
         page = pages[index] if index < len(pages) else await pages[-1].context.new_page()
         tabs[site["siteId"]] = Tab(page, site)
+    for tab in tabs.values():  # where a tab may move when its own browser cannot load its website (Tab.renew)
+        tab.spares = [page.context for page in pages if page.context is not tab.page.context]
     return opened, tabs
 
 
@@ -194,6 +384,10 @@ async def solve(task: dict, playwright) -> dict | None:
     brief = task["brief"]
     listing = "\n".join(f"- {site['siteId']}: {site['url']}" for site in sites)
     context = await read_context(brief + f"\n\nThe websites of this run:\n{listing}")
+    SITE_ROLES.clear()
+    RELEASED.clear()
+    SITE_ROLES.update({role: str(context.get(f"{role}_site") or "") for role in ("erp", "mail")
+                       if str(context.get(f"{role}_site") or "") in {site["siteId"] for site in sites}})
     case = CaseFile(brief, context)
     print(f"Sanity checks on: {', '.join(sanity.active()) or 'none'}", flush=True)
     print(f"Context: tender {case.reference}, scenario {case.scenario.isoformat()}, company {case.company}, "

@@ -22,6 +22,25 @@ from worker import ACTIONS_HELP, Agent
 WRAP_UP = 150  # seconds before the deadline at which entering stops and signing starts: the code takes a while
 MAIL_BUDGET = 120  # seconds one request to the mailbox may take
 CLERK_STEPS, COURIER_STEPS = 120, 25
+# The clerk's hint when it goes in circles (run d3ca14df: 95 turns of "fill the position, add it, empty again" until
+# its step cap, never signed). The brief's rule 9: every bid form lets a position be left out explicitly, and a
+# signed bid with one position left out keeps the others' points; an unsigned one scores nothing.
+# Run 8a2e1426: the same loop on one position, then the clerk left out that one AND every position after it. So the
+# hint first sends it back to the start of the stuck position (a configurator that got out of step is reset by doing
+# it again from its first choice, as in every clean run), and leaving out is for that one position only.
+CLERK_CIRCLE_HINT = (
+    "You are going in circles: the same steps keep repeating without progress. Read the page for an error or hint "
+    "next to the fields and fix exactly that. If the form seems out of step (fields empty or locked, \"not possible "
+    "in this step\"), start this position over: reload the page or go back to its first choice, then redo every "
+    "choice with its apply button and all amounts in one \"steps\" action, as for the positions before. Only if that "
+    "fails too, leave out THIS ONE position with the form's explicit way of omitting a position. Every position "
+    "after it has its values on the bid sheet: enter each of them normally, then sign. A signed bid keeps the points "
+    "of every position it has; an unsigned one scores nothing.")
+# Leaving out a priced position costs its points, so the clerk may do it only for a position it is stuck on: once at
+# the start, and once more each time it is caught going in circles again (run 012496d3: a single allowance for the
+# whole run made a clerk stuck on a second position loop on the refused omit). The positions the calculator left out
+# and a short time are always allowed. Matched on the omit control's label in a few languages.
+OMIT_CONTROL = re.compile(r"auslass|weglass|omit|leave out|skip position|nicht anbieten", re.I)
 # How often the final step is held back because the page does not show the bid (preflight "unproven"). The wait is
 # bounded: a signed bid scores, an unsigned one does not.
 UNPROVEN_REFUSALS = 2
@@ -56,6 +75,15 @@ Reading the bid sheet
 - null means the value is not known: leave that field empty. 0 or 0.00 is a known zero: enter it.
 - "omitted_positions" could not be priced. Never invent values for them: use the form's explicit way of leaving
   a position out, if it has one.
+- Save turns: once you have seen how one step of the form works (which fields, which button applies a choice or
+  moves on), do a whole step, for example one position with all its choices and amounts, in one "steps" action,
+  using the labels exactly as the page shows them. If it stops part-way, read the page and carry on from there.
+  This includes a configurator where each choice must be applied before the next one appears: put every choice
+  and its apply button, in order, into the same "steps" action, then the amounts and the button that moves on.
+  You know every value from the bid; you do not need to see each list first.
+- A position is entered once. When the form saves it, it may list it, show a short confirmation and empty its
+  fields for a further line: then go on with the control that moves to the next position or step, and do not
+  enter the same position again.
 
 {actions}
 One more action:
@@ -177,6 +205,7 @@ async def submit_bid(tender_tab: Tab, mail_tab: Tab | None, bid: Bid, context: d
     # The control that requested the signing code: clicking it again before a code came back voids the code that is
     # on its way (sandbox run a85be021 lost its signature this way). Recorded when the clerk first asks the mailbox.
     code_request = {"label": None, "searches": 0, "last_click": None}
+    omits = {"count": 0, "hints": 0}  # omit controls pressed, and the clerk's circle hints at the last one
 
     def _label_of(aid) -> str | None:
         user = clerk.turns[-1]["user"] if clerk.turns else ""
@@ -194,6 +223,21 @@ async def submit_bid(tender_tab: Tab, mail_tab: Tab | None, bid: Bid, context: d
             return (f'blocked: "{code_request["label"]}" was already used and no code has come back yet. A new '
                     "request makes the code already on its way invalid. Ask the mailbox colleague again (ask_mail) "
                     "and say exactly what to look for: the newest code mail for this tender.")
+        if label and bid.decision == "bid" and OMIT_CONTROL.search(label):
+            stuck_again = clerk.circle_hints > omits["hints"]  # caught going in circles since the last omit
+            # A position the form adds that is not on the bid sheet (run 9ac58b69: an extra form position) is left
+            # out as it should be: the cap is only for a page that shows one of the bid's priced positions.
+            page = str(getattr(tender_tab, "document", "") or "")
+            priced_here = any(re.search(rf"(?<![\w.]){re.escape(str(line.position))}(?![\w.])", page)
+                              for line in bid.lines)
+            if (priced_here and omits["count"] >= len(bid.omitted) + 1 and not stuck_again
+                    and deadline - time.time() >= WRAP_UP):
+                return (f'blocked: "{label}" would leave out a position that has its values on the bid sheet. Only '
+                        "the one position you were stuck on may be left out. Enter this position with its values "
+                        "from the bid sheet (all choices with their apply buttons and the amounts in one \"steps\" "
+                        "action), then move on.")
+            omits["count"] += 1
+            omits["hints"] = clerk.circle_hints
         if label:
             code_request["last_click"] = label  # read from the page the clerk acted on, before the click happens
         return None
@@ -299,7 +343,8 @@ async def submit_bid(tender_tab: Tab, mail_tab: Tab | None, bid: Bid, context: d
         guard.allow(reference)
     clerk = Agent("submit", tender_tab, system, heading,
                   extra={"ask_mail": ask_mail, "check_submission": check_submission, "finalize": finalize}, deadline=deadline,
-                  max_steps=CLERK_STEPS, think=CLERK_THINKS, guard=clerk_guard)
+                  max_steps=CLERK_STEPS, think=CLERK_THINKS, guard=clerk_guard,
+                  circle_hint=CLERK_CIRCLE_HINT)
     outcome = await clerk.run()
     receipt = str(outcome.get("answer") or "").strip()
     notes = str(outcome.get("summary") or "")

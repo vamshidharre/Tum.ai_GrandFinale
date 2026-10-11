@@ -31,7 +31,7 @@ PRICE_INPUT, PRICE_CACHED, PRICE_OUTPUT = 0.15, 0.016, 0.47
 REMINDER = "That reply was not a single JSON object. Answer again with exactly one JSON object and nothing else."
 
 STATS = {"calls": 0, "failed": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0, "seconds": 0.0}
-BY_LABEL: dict[str, list] = {}  # caller kind -> [calls, seconds], to see where a run spends its time
+BY_LABEL: dict[str, list] = {}  # caller kind -> [calls, seconds, prompt tokens]: where a run spends time and money
 _warm = {"done": False}
 
 _bound: dict = {}  # the client and the gate belong to one event loop; another loop (tests) gets its own
@@ -148,10 +148,11 @@ async def chat_json(messages: list[dict], *, think: bool = True, max_tokens: int
                 finally:
                     spent = time.monotonic() - started
                     STATS["seconds"] += spent
-                    kind = BY_LABEL.setdefault(label.split(":")[0] if label.startswith("extract") else (label or "call"), [0, 0.0])
+                    kind = BY_LABEL.setdefault(label.split(":")[0] if label.startswith("extract") else (label or "call"), [0, 0.0, 0])
                     kind[0] += 1
                     kind[1] += spent
             _count(reply.usage, provider)
+            kind[2] += getattr(reply.usage, "prompt_tokens", 0) or 0
             choice = reply.choices[0]
             content = choice.message.content or ""
             parsed = parse_json_object(content)
@@ -193,5 +194,5 @@ def summary() -> str:
     return (f"LLM: {STATS['calls']} calls ({STATS['failed']} failed), {STATS['prompt_tokens']} prompt tokens "
             f"({STATS['cached_tokens']} cached), {STATS['completion_tokens']} completion tokens, "
             f"{STATS['seconds']:.0f} s in calls, about ${cost:.4f}; by caller: "
-            + ", ".join(f"{name} {calls}x/{seconds:.0f}s" for name, (calls, seconds) in sorted(BY_LABEL.items()))
+            + ", ".join(f"{name} {calls}x/{seconds:.0f}s/{tokens // 1000}k in" for name, (calls, seconds, tokens) in sorted(BY_LABEL.items()))
             + (f"; openai tokens {STATS['openai_tokens']}" if STATS.get("openai_tokens") else ""))

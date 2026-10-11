@@ -32,9 +32,17 @@ Browser actions:
   {"do": "set", "id": 12, "value": true}           tick/untick a checkbox, choose a radio button, or move a slider to a number
   {"do": "goto", "url": "<an address or path on this website that you have seen>"}
   {"do": "back"}    {"do": "reload"}
-  {"do": "collect", "id": 12, "max_pages": 30}     [12] is the next-page or load-more control of a list or paged document you want in full: it is followed until the end and all pages come back as one document. Use 30 unless the list is known to be shorter; if it says incomplete, collect again from the current page.
+  {"do": "collect", "id": 12, "max_pages": 10}     [12] is the next-page or load-more control of a list or paged document you want in full: it is followed until the end and all pages come back as one document
   {"do": "fetch", "id": 12}                        download the file behind link [12] (archive, CSV, PDF, text) and read it as a document
   {"do": "wait"}                                   pause two seconds, for a page that is still loading
+  {"do": "steps", "steps": [{"field": "<label>", "value": "..."}, {"press": "<button label>"}, ...]}
+                                                   a sequence across page reloads: each step finds its control again
+                                                   by its label on the page as it then is, so a whole chain (choose,
+                                                   apply, choose the next, apply, fill, continue) runs in one turn.
+                                                   "field" fills a text field, chooses in a list or ticks a box
+                                                   (value true/false); "press" clicks a button or link. It stops at
+                                                   the first step whose control it cannot find unambiguously and
+                                                   tells you which steps ran. Use it for forms whose fields you know.
   {"do": "done", "summary": "<ten words>", "answer": "..."}   you are finished; "answer" only when you were asked for one
 
 Reading the page:
@@ -53,8 +61,42 @@ Reading the page:
 """
 
 STEP_TIMEOUT = 45  # seconds for one page read or one browser action: a hung page must not freeze the whole run
-FULL_TURNS = 2  # how many past turns stay word for word; older ones keep the reasoning and drop the page text
-NAVIGATING = {"click", "goto", "back", "reload", "login", "collect", "fetch"}
+# How many past turns stay word for word; older ones keep the reasoning and drop the page text. Each full turn resends
+# a page of up to 14,000 characters on every call, and input tokens are most of the run's cost (the provider's prompt
+# cache hits only now and then). FULL_TURNS=2 brings back the earlier setting for comparison.
+FULL_TURNS = int(os.environ.get("FULL_TURNS", "1"))
+# How many past turns are kept at all; older ones shrink to their thought. Every kept turn costs ~250 tokens on every
+# later call, and the ERP agent runs 40-60 turns: in run 4876a0ad its calls averaged ~14k input tokens, about half of
+# them old history (ERP was 46% of the run's input). HISTORY_TURNS=0 keeps every turn, as before.
+HISTORY_TURNS = int(os.environ.get("HISTORY_TURNS", "10"))
+
+
+def _thought(reply: str) -> str:
+    """The thought of a stored reply, one line, for the condensed older history."""
+    try:
+        text = str(json.loads(reply).get("thought") or "")
+    except (ValueError, AttributeError):
+        text = reply
+    return " ".join(text.split())[:200] or "(no thought)"
+NAVIGATING = {"click", "goto", "back", "reload", "login", "collect", "fetch", "steps"}
+STEPS_LIMIT, STEPS_TIMEOUT = 30, 240  # one "steps" action: at most this many steps, and seconds in all
+ALERT = re.compile(r"\((?:alert|status)\)[^\n]*")  # a message the page announces to screen readers (Tab.observe)
+CONTROL = re.compile(r'\[(\d+)\] (?:\(in collapsed menu\) )?(select|input(?:\(\w+\))?|button|checkbox|radio|link|clickable|switch) "([^"]*)"([^\[]*)')
+
+
+def find_control(page: str, label: str, kinds: tuple[str, ...]) -> tuple[str | None, str]:
+    """The id of the one control of one of `kinds` labelled `label` on the rendered page: an exact label first,
+    then a label that contains it. (None, why) when there is none or more than one that is not disabled."""
+    wanted = " ".join(label.casefold().split())
+    found = [(m.group(1), m.group(2), " ".join(m.group(3).casefold().split()), m.group(4)) for m in CONTROL.finditer(page)]
+    found = [f for f in found if f[1].split("(")[0] in kinds and "disabled" not in f[3]]
+    for match in ([f for f in found if f[2] == wanted], [f for f in found if wanted and wanted in f[2]]):
+        ids = list(dict.fromkeys(f[0] for f in match))
+        if len(ids) == 1:
+            return ids[0], match[0][1]
+        if len(ids) > 1:
+            return None, f'{len(ids)} controls are labelled "{label}" ({", ".join("[" + i + "]" for i in ids)}): use their ids'
+    return None, f'no control labelled "{label}" on the page now'
 
 
 def state_fingerprint(observation: str) -> str:
@@ -69,12 +111,27 @@ def state_fingerprint(observation: str) -> str:
     return hashlib.sha1(stable.encode("utf-8", "replace")).hexdigest()
 
 
+def action_fingerprint(actions: list[dict], observation: str = "") -> str:
+    """Use a control's visible label instead of its transient id in repeat checks."""
+    stable_actions = []
+    for action in actions:
+        stable = {key: value for key, value in action.items() if key != "id"}
+        if action.get("id") is not None:
+            match = re.search(rf"(?m)^\[{re.escape(str(action['id']))}\](.*)$", observation)
+            if match:
+                stable["target"] = match.group(1).strip()
+        stable_actions.append(stable)
+    return json.dumps(stable_actions, sort_keys=True)
+
+ESCALATION_LIMIT = 2  # stronger turns per agent: they cost reasoning time and an image
+
+
 class Agent:
     def __init__(self, name: str, tab: Tab, system: str, briefing: Callable[[], str],
                  extra: dict[str, Callable[[dict], Awaitable[str]]] | None = None, deadline: float | None = None,
                  max_steps: int = 80, think: bool = False,
                  idle: Callable[[str], Awaitable[str | None]] | None = None,
-                 guard: Callable[[dict], str | None] | None = None, finish_on_repeat: int | None = None):
+                 guard: Callable[[dict], str | None] | None = None, finish_on_repeat: int | None = None, circle_hint: str | None = None):
         """`briefing()` heads every turn. `extra` adds actions: name -> handler(action) -> result text.
         `idle("done")` lets the caller hold a finished agent until there is news for it (returns the news) or
         let it stop (returns None)."""
@@ -89,12 +146,27 @@ class Agent:
         self.finish_on_repeat = finish_on_repeat
         self._thoughts: list[str] = []
         self._circle_hinted = False
+        self._circle_hinted_at = -99
+        self._circle_hints = 0
+        self._escalate = False
+        self.escalations = 0  # stronger turns given (escalation plugin), at most ESCALATION_LIMIT
+        self._stuck = False
+        self.circle_hint = circle_hint or (
+            "You are going in circles: the same steps keep repeating without progress. The page may already show "
+            "what you need, including inside embedded documents: read it fully. Otherwise open the link's address "
+            "directly with goto, or try a different way. If you already have the answer, finish with done now.")
         self._circle_hint: str | None = None  # a sanity check that may veto a browser action before it runs (sanity.py)
         self.turns: list[dict] = []
+        self.page_seen = ""
         self.held: tuple[str, str] | None = None  # a collected or fetched document, until the agent moves on
         self.coverage = Ledger()  # what this agent really opened, typed and followed (coverage.py)
         self.steps = 0
         self.started = time.time()
+
+    @property
+    def circle_hints(self) -> int:
+        """How often this agent was told it is going in circles."""
+        return self._circle_hints
 
     def document(self) -> tuple[str, str]:
         """What the agent is looking at: the document it collected or fetched, else the page as last read."""
@@ -105,12 +177,77 @@ class Agent:
 
     def _messages(self, user: str) -> list[dict]:
         messages = [{"role": "system", "content": self.system}]
-        for index, turn in enumerate(self.turns):
-            recent = index >= len(self.turns) - FULL_TURNS
-            messages.append({"role": "user", "content": turn["user"] if recent else turn["short"]})
+        kept = self.turns[-HISTORY_TURNS:] if HISTORY_TURNS > 0 else self.turns
+        older = self.turns[:len(self.turns) - len(kept)]
+        earlier = ""
+        if older:  # one line per older turn: what the agent thought, so it still knows what it tried
+            earlier = ("EARLIER IN THIS TASK (your thoughts, oldest first; their pages and results are no longer shown)\n"
+                       + "\n".join(f"- {_thought(turn['assistant'])}" for turn in older) + "\n\n")
+        for index, turn in enumerate(kept):
+            recent = index >= len(kept) - FULL_TURNS
+            content = turn["user"] if recent else turn["short"]
+            messages.append({"role": "user", "content": (earlier + content) if index == 0 else content})
             messages.append({"role": "assistant", "content": turn["assistant"]})
-        messages.append({"role": "user", "content": user})
+        messages.append({"role": "user", "content": (earlier + user) if not kept else user})
         return messages
+
+    async def _escalated_turn(self, user: str) -> dict:
+        """One stronger turn for an agent that keeps going in circles: reasoning on, and a screenshot of the page,
+        which shows what the text view can hide (a slider, a disabled button, a banner over the page, a scanned
+        document). The model still decides what to do; nothing about the website is assumed here."""
+        text = (user + "\n\nYOU ARE STUCK: your last steps keep repeating without progress. Look at the screenshot of "
+                "the page as it really is, think about why your steps did not work, and choose a different way. If "
+                "what you need is not reachable from here, finish with done.")
+        messages = self._messages(text)
+        image = await self.tab.screenshot() if hasattr(self.tab, "screenshot") else None
+        if image:
+            messages[-1]["content"] = [{"type": "text", "text": text},
+                                       {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image}"}}]
+        self.log(f"escalated: reasoning on{', with a screenshot' if image else ', no screenshot available'}")
+        reply = await llm.chat_json(messages, think=True, label=f"{self.name}:escalated")
+        return reply or await llm.chat_json(self._messages(user), think=self.think, label=self.name)
+
+    async def _steps(self, steps: list) -> str:
+        """Runs a chain of label-addressed steps across page reloads (the "steps" action). Every step is turned into
+        the plain action it stands for and passes the same guard as a fill, select, set or click the model sends."""
+        done: list[str] = []
+        for number, step in enumerate(steps[:STEPS_LIMIT], start=1):
+            if not isinstance(step, dict):
+                continue
+            label = str(step.get("press") or step.get("field") or "")
+            page = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+            if "press" in step:
+                aid, kind = find_control(page, label, ("button", "link", "clickable"))
+                action = {"do": "click", "id": aid}
+            else:
+                aid, kind = find_control(page, label, ("select", "input", "checkbox", "radio", "switch"))
+                value = step.get("value", "")
+                if kind == "select":
+                    action = {"do": "select", "id": aid, "value": str(value)}
+                elif kind in ("checkbox", "radio", "switch"):
+                    action = {"do": "set", "id": aid, "value": value if isinstance(value, bool) else str(value).lower() not in ("false", "0", "no", "")}
+                else:
+                    action = {"do": "fill", "id": aid, "text": str(value)}
+            if aid is None:
+                return (f"ran {len(done)} of {len(steps)} steps" + (": " + "; ".join(done) if done else "") +
+                        f". Stopped at step {number}: {kind}. The page is as it is now; continue from there.")
+            veto = self.guard(action) if self.guard else None
+            if veto:
+                return f"ran {len(done)} of {len(steps)} steps" + (": " + "; ".join(done) if done else "") + f". Step {number} was refused: {veto}"
+            alerts_before = set(ALERT.findall(page))
+            result = await asyncio.wait_for(self._browser(action), STEP_TIMEOUT)
+            done.append(f'{number}. {label}: {str(result)[:80]}')
+            if action["do"] == "click":  # a press can bring an error message: stop there instead of filling on blindly
+                after = await asyncio.wait_for(self.tab.observe(), STEP_TIMEOUT)
+                new = [a for a in ALERT.findall(after) if a not in alerts_before]
+                if new:  # an error or a confirmation: the model reads which (run 012496d3: a "saved" notice taken
+                    # for an error made the clerk enter the same position again, which the form refused)
+                    return (f"ran {len(done)} of {len(steps)} steps: " + "; ".join(done) +
+                            f". After step {number} the page says: {' / '.join(new)[:300]}. If that reports an error, "
+                            "fix it; if it confirms what you did, go on from the page as it is now.")
+            if any(word in str(result) for word in ("has no option", "did not change", "is disabled", "BUT the field")):
+                return f"ran {len(done)} of {len(steps)} steps: " + "; ".join(done) + f". Step {number} did not take; check it."
+        return f"ran all {len(done)} steps: " + "; ".join(done)
 
     async def _browser(self, action: dict) -> str:
         do, tab = action.get("do"), self.tab
@@ -118,6 +255,8 @@ class Agent:
             return await tab.login()
         if do == "click":
             return await tab.click(action.get("id"))
+        if do == "steps":
+            return await self._steps(action.get("steps") or [])
         if do == "fill":
             return await tab.fill(action.get("id"), action.get("text", ""), bool(action.get("enter")))
         if do == "select":
@@ -131,7 +270,7 @@ class Agent:
         if do == "reload":
             return await tab.reload()
         if do == "collect":
-            return await tab.collect(action.get("id"), action.get("max_pages") or 30)
+            return await tab.collect(action.get("id"), action.get("max_pages") or 10)
         if do == "fetch":
             return await tab.fetch(action.get("id"))
         return f'unknown action "{do}"'
@@ -173,6 +312,7 @@ class Agent:
             except Exception as error:  # noqa: BLE001
                 page = f"(the page could not be read: {str(error)[:200]})"
             self.coverage.saw(page)
+            self.page_seen = page  # the page the model answers to: its ids and link targets (file_each)
             results.extend(self.tab.take_events())
             done_text = "\n".join(f"{n}. {text}" for n, text in enumerate(results, 1)) or "(none yet)"
             left = int(self.deadline - time.time())
@@ -180,7 +320,12 @@ class Agent:
                     f"CURRENT PAGE\n{page}")
             read_s = time.time() - clock
             clock = time.time()
-            reply = await llm.chat_json(self._messages(user), think=self.think, label=self.name)
+            if self._escalate:
+                self._escalate = False
+                self.escalations += 1
+                reply = await self._escalated_turn(user)
+            else:
+                reply = await llm.chat_json(self._messages(user), think=self.think, label=self.name)
             model_s = time.time() - clock
             clock = time.time()
             actions = reply.get("actions")
@@ -200,18 +345,29 @@ class Agent:
             thought = str(reply.get("thought", ""))[:300]
             self._thoughts.append(" ".join(thought.lower().split())[:160])
             recent = self._thoughts
-            # Going in circles: the same thought three times (A A A), or two thoughts alternating (A B A B), as in the
-            # courier stress test where "unlock the list" and "open the newest message" alternated for 19 turns.
-            circling = bool(self.finish_on_repeat) and (
-                (len(recent) >= 3 and len(set(recent[-3:])) == 1)
-                or (len(recent) >= 4 and recent[-1] == recent[-3] and recent[-2] == recent[-4] and recent[-1] != recent[-2]))
-            if circling and not self._circle_hinted:
-                self._circle_hinted = True
-                circling = False  # first time: a concrete way out, not yet the forced finish
-                self._circle_hint = ("You are going in circles: the same steps keep repeating without progress. The "
-                                     "page may already show what you need, including inside embedded documents: read "
-                                     "it fully. Otherwise open the link's address directly with goto, or try a "
-                                     "different way. If you already have the answer, finish with done now.")
+            # Going in circles: the same thought three times (A A A), two thoughts alternating (A B A B), as in the
+            # courier stress test where "unlock the list" and "open the newest message" alternated for 19 turns, or
+            # the same thought three times within the last 16 turns, as in sandbox run e3804980 where the ERP agent
+            # rejected the same material every 6 turns for 46 turns.
+            strict = ((len(recent) >= 3 and len(set(recent[-3:])) == 1)
+                      or (len(recent) >= 4 and recent[-1] == recent[-3] and recent[-2] == recent[-4] and recent[-1] != recent[-2]))
+            circling = strict or recent[-16:].count(recent[-1]) >= 3
+            if circling and (not self.finish_on_repeat or not self._circle_hinted):
+                circling = False  # a concrete way out first; only an agent with finish_on_repeat is then forced to finish
+                if len(recent) - self._circle_hinted_at >= 6:  # once every 6 turns at most
+                    if self._circle_hints >= 2 and self.idle:
+                        self._stuck = True  # two hints ignored: an investigator is sent idle (see below)
+                    self._circle_hinted, self._circle_hinted_at = True, len(recent)
+                    self._circle_hints += 1
+                    self._circle_hint = self.circle_hint
+                    # The second time: also one stronger turn, reasoning on and with a screenshot (sanity plugin
+                    # "escalation"), before the agent is given up on at the third. Investigators only (they have an
+                    # idle hook); the bid clerk, which repeats one pattern for every position on purpose (run bb0655a2), only on a
+                    # strict loop: the same thought three times or two alternating (run d3ca14df: 95 turns of "fill,
+                    # add position, empty again" until its step cap, never signed).
+                    if self._circle_hints == 2 and (self.idle or strict) and self.escalations < ESCALATION_LIMIT \
+                            and sanity.enabled("escalation"):
+                        self._escalate = True
             if circling:
                 final = await llm.chat_json(self._messages(
                     user + "\n\nYou have reached the same conclusion several times in a row. Stop checking and finish "
@@ -233,7 +389,7 @@ class Agent:
 
             # A repeated action is a loop only if the model also sees the same
             # page.  A form may keep its URL while legitimately changing state.
-            signature = json.dumps(actions, sort_keys=True) + state_fingerprint(page)
+            signature = action_fingerprint(actions, page) + state_fingerprint(page)
             seen_signatures[signature] = seen_signatures.get(signature, 0) + 1
             repeats = repeats + 1 if signature == last_signature else max(0, seen_signatures[signature] - 1)
             last_signature = signature
@@ -272,7 +428,7 @@ class Agent:
                     continue
                 before = self.tab.page.url
                 try:
-                    result = await asyncio.wait_for(self._browser(action), STEP_TIMEOUT)
+                    result = await asyncio.wait_for(self._browser(action), STEPS_TIMEOUT if do == "steps" else STEP_TIMEOUT)
                 except asyncio.TimeoutError:
                     result = f"{do} took longer than {STEP_TIMEOUT} s and was stopped; the page may be stuck"
                 except Exception as error:  # noqa: BLE001
@@ -323,6 +479,18 @@ class Agent:
                 results.append("You have sent the same actions three times with the same result: they do not work "
                                "here. Read the page again from the top for another way (a further check, a toggle, a "
                                "different link, a search), or finish with done.")
+            # An agent that can be held idle (an investigator) and is stuck is sent idle as if it had finished: the
+            # same actions six times on an unchanged page, or still circling after two hints. Sandbox run 74b22ceb:
+            # the tender-portal agent opened the same unchanged page 122 times (~8 min), and the investigation
+            # waited for it until its time limit. Idle, it is woken again when the case file has news for it.
+            if finished is None and self.idle and (repeats >= 5 or self._stuck):
+                self.log("stuck: repeating itself without progress; sent idle until the case file has news")
+                finished = {"do": "done", "summary": "stopped: repeated the same steps without progress"}
+                self._stuck, self._circle_hints, self._thoughts = False, 0, []
+                seen_signatures.clear()
+                last_signature, repeats = "", 0
+                results.append("You were sent idle because you kept repeating the same steps without progress. "
+                               "Work on what the case file news asks for, by a different way than before.")
             if finished is not None:
                 outcome.update(summary=str(finished.get("summary", "")), answer=finished.get("answer"))
                 news = await self.idle("done") if self.idle else None

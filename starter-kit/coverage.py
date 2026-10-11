@@ -100,8 +100,8 @@ class Ledger:
                                                f"stopped at its limit of {run.pages} page(s) with more pages left"
                                                for run in cut_short)
                     + ". An incomplete list proves neither that everything is filed nor that something is absent. "
-                      "Collect the rest from the current page (each collect can read up to 30 pages), file it with "
-                      "keep, then answer again.")
+                      "Collect the rest (collect continues from the page you are on; a higher max_pages reads "
+                      "further), file it with keep, then answer again.")
         if status != "absent" or (times and self.size() > size):
             return None
         self.refused[question] = (times + 1, self.size())

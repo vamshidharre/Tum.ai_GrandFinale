@@ -53,7 +53,9 @@ SHAPES = {
 {"positions": [{"position": "<position number>", "description": "<short text>", "quantity": <integer as published>,
   "unit": "<unit as written>", "unit_is_set": <true if the unit counts sets/kits of several pieces, false for individual pieces>,
   "requirement_ref": "<the specification requirement this position refers to>"}]}""",
-    "clarifications": """Answers of the tender's bidder Q&A. One entry per answer; an answer that changes nothing still gets an entry.
+    "clarifications": """Answers of the tender's bidder Q&A, or other binding notices that change the tender (change or amendment
+notices, "Änderungsmitteilung"); for a notice, its number is the answer number. One entry per answer; an answer that
+changes nothing still gets an entry.
 {"answers": [{"number": "<answer number>", "timestamp": "<when it was issued>",
   "withdraws": ["<number of an earlier answer this one withdraws>"],
   "quantity_changes": [{"position": "<position>", "quantity": <new binding quantity>,
@@ -65,7 +67,8 @@ SHAPES = {
      "delivery_commitment": "<key or null>", "setup_pool": "<key or null>", "project_bonus": "<key or null>",
      "ordinary_setup_fee": "<one-off setup fee for this position as written, or null>", "number_format": "de-DE|en-US"}]}]}
 A key the answer says does not apply ("no pool", "no bonus") is null.""",
-    "revisions": """The revision history of the buyer's technical specification.
+    "revisions": """The revision history of the buyer's technical specification: only the specification's own revisions, never a
+change notice or other document listed next to it.
 {"document": "<document name or number>", "revisions": [{"revision": "<revision id>", "date": "<date>",
   "status": "current|superseded|draft|unknown", "status_text": "<the status as written>"}]}""",
     "requirements": """Requirements of ONE revision of the technical specification.
@@ -84,19 +87,22 @@ A key the answer says does not apply ("no pool", "no bonus") is null.""",
   "allocation_mass": "<mass used to allocate shared setup cost, as written, or null>", "allocation_mass_unit": "mg|g|kg|t",
   "surcharge_mass": "<mass the metal surcharge is charged on, as written, or null>", "surcharge_mass_unit": "mg|g|kg|t",
   "metal_index_code": "<price index code or null>", "number_format": "de-DE|en-US",
-  "free_stock": <freely available / unrestricted stock in pieces (e.g. 'Frei verwendbar' or 'Verfügbarer Gesamtbestand'), EXCLUDING blocked/inspection/reserved stock ('Prüfbestand', 'Gesperrt'). If the page only shows total physical stock ('Physischer Bestand') or says to open storage locations for availability, MUST be null; int|null>,
+  "free_stock": <freely available / unrestricted stock in pieces (e.g. 'Frei verwendbar' or 'Verfügbarer Gesamtbestand'), EXCLUDING blocked/inspection/reserved stock ('Prüfbestand', 'Gesperrt'). If the page only shows total physical stock ('Physischer Bestand') or says to open storage locations for availability, MUST be null. A single stock figure with no breakdown and no mention of blocked, inspection or reserved stock is the free stock; int|null>,
   "stock_lead_weeks": <delivery time from stock in weeks, int|null>,
   "production_lead_weeks": <production lead time in weeks, int|null>}]}""",
     "price_conditions": """Price conditions (condition records with validity and quantity scales) of ONE material.
 {"material_number": "<number>", "conditions": [{"valid_from": "<date>", "valid_to": "<date>", "currency": "<ISO code>",
   "fx_key": "<key of the FX fixing it names, or null>", "price_unit_pieces": <the number of pieces the prices are quoted for, int>,
   "number_format": "de-DE|en-US", "scales": [{"min_quantity": "<from quantity as written>", "price": "<price as written>"}]}]}""",
-    "mail": """Messages of the sales mailbox. One entry per message whose text is shown.
+    "mail": """Messages of the sales mailbox. One entry per message whose text is shown. A register of approvals or releases on
+another site (a table of records, e.g. discount approvals) is read the same way: one entry per record, its approver
+as sender, its date as timestamp, its procedure or tender reference as tender_reference.
 {"mailbox_address": "<the mailbox the user is logged in to, if the page shows it, else null>",
  "messages": [{"sender": "<sender address>", "timestamp": "<sent/received>", "subject": "<subject>",
   "tender_reference": "<the reference this message is about, exactly as written, with any suffix>",
   "topic": "discount_approval|condition_rules|price_indices|tech_release|packaging_tariffs|delivery_release|fx_fixing|setup_pools|project_bonus|other",
   "number_format": "de-DE|en-US",
+  "quantity_changes": [{"position": "<position>", "quantity": <new binding quantity, integer>}],
   "discount": {"approves": <true only if the message itself grants a discount>, "percent": "<as written>",
                "min_order_value": "<minimum net order value the approval is conditional on, or null>"},
   "condition_rules": [{"group": "<key>", "discount_applies_to": "base_only|base_and_surcharge|none"}],
@@ -108,7 +114,8 @@ A key the answer says does not apply ("no pool", "no bonus") is null.""",
   "setup_pools": [{"key": "<pool key>", "fee": "<the pool's one fee, as written>",
                    "cent_allocation": "largest_remainder|remainder_to_first|remainder_to_last|remainder_to_largest"}],
   "project_bonus": [{"key": "<plan key>", "bands": [{"from": "<lower bound>", "to": "<upper bound or null if open-ended>", "percent": "<rate>"}]}]}]}
-Fill only the blocks the message's original text really contains; leave the others out. Take values from the
+quantity_changes: only when the message itself (for example the buyer's request) changes the binding quantity of a
+tender position. Fill only the blocks the message's original text really contains; leave the others out. Take values from the
 message as sent, never from a draft, preview or quoted template shown around it. One price index code can list
 several rates with validity windows: give each as its own entry.""",
 }
@@ -117,6 +124,7 @@ CONTEXT_SHAPE = """From the task brief, as JSON:
 {"tender_reference": "<the tender's reference>", "scenario_date": "<ISO timestamp>", "company_name": "<the bidder's company name>",
  "vat_id": "<the bidder's VAT id or null>",
  "mail_site": "<the id, from the list of this run's websites, of the webmail that holds the sales mailbox>",
+ "erp_site": "<the id, from the list of this run's websites, of the company's ERP or inventory system (materials, stock, price conditions)>",
  "authorized_senders": {"discount_approval": "<mailbox local part the brief authorizes for discount approvals>",
    "condition_rules": "...", "price_indices": "...", "tech_release": "...", "packaging_tariffs": "...",
    "delivery_release": "...", "fx_fixing": "...", "setup_pools": "...", "project_bonus": "..."}}
@@ -127,6 +135,11 @@ _SET_UNITS = {"satz", "sätze", "saetze", "set", "sets", "kit", "kits"}
 
 
 def _int(value) -> int | None:
+    """A whole number (quantity, stroke, carton size, weeks). "1.250" and "1,250" are one thousand two hundred and
+    fifty here, not 1.25: a whole-number field has no decimals, so a separator before exactly three digits groups
+    thousands, in German and in English writing alike."""
+    if isinstance(value, str) and re.fullmatch(r"\s*\d{1,3}(?:[.,'  ]\d{3})+\s*", value):
+        value = re.sub(r"[.,'  \s]", "", value)
     number = parse_number(value)
     return int(number) if number is not None else None
 
@@ -475,12 +488,16 @@ class CaseFile:
     # ---- from records to calculator inputs -------------------------------------------------------------------
 
     def governing_revision(self) -> str | None:
+        """The latest current revision; one with requirements on file first, so that a document listed as "current"
+        next to the specification (eval variant B: a change notice) cannot replace the specification itself."""
         current = []
+        with_requirements = {same for (revision, _ref) in self.requirements for same in [revision] if revision}
         for key, row in self.revisions.items():
             when = parse_when(row.get("date"))
             if row.get("status") == "current" and (when is None or when <= self.scenario):
-                current.append((when or datetime.min.replace(tzinfo=timezone.utc), key))
-        return max(current)[1] if current else None
+                filed = any(same_text(key, revision) for revision in with_requirements)
+                current.append((filed, when or datetime.min.replace(tzinfo=timezone.utc), key))
+        return max(current)[2] if current else None
 
     def _authorized(self, row: dict, topic: str) -> bool:
         """The brief's test for a record: exact tender reference, authorized sender, not after the scenario date."""
@@ -598,6 +615,16 @@ class CaseFile:
                 if fee is not None:
                     entry.setup_fees[position] = fee
             clarifications.append(entry)
+        # A quantity change can also come by mail (eval variant A: the buyer's request changed one position): it
+        # counts like a Q&A answer of its date, for exactly this tender reference and not after the scenario date.
+        for key, row in self.messages.items():
+            changes = [(str(change["position"]).strip(), _int(change.get("quantity")), None)
+                       for change in row.get("quantity_changes") or []
+                       if isinstance(change, dict) and _text(change.get("position")) and _int(change.get("quantity")) is not None]
+            when = parse_when(row.get("timestamp"))
+            if (changes and (_text(row.get("tender_reference")) or "").upper() == self.reference.upper()
+                    and (when is None or when <= self.scenario)):
+                clarifications.append(Clarification(f"mail:{key}", when, quantity_changes=changes))
         requirements = {}
         for (revision, ref), row in self.requirements.items():
             if governing and revision and not same_text(revision, governing):
@@ -630,7 +657,7 @@ class CaseFile:
         return SimpleNamespace(governing=governing, positions=positions, clarifications=clarifications,
                                requirements=requirements, materials=materials, authorities=self.authorities(),
                                no_material={qid.split(":", 1)[1] for qid, (status, _) in self.answers.items()
-                                            if qid.startswith(("material:", "candidates:")) and status == "absent"})
+                                            if qid.startswith("material:") and status == "absent"})
 
     # ---- what is still unknown -------------------------------------------------------------------------------
 
@@ -675,20 +702,6 @@ class CaseFile:
             need = needs.get(ref)
             if need is None or ref in waiting or need.missing():
                 continue
-            audit_id = f"candidates:{ref}"
-            audit = self.answers.get(audit_id)
-            if audit is None:
-                seen = [f"{m.number} ({'active' if m.active else 'not active' if m.active is False else 'status unknown'}, "
-                        f"{m.bore_mm}/{m.stroke_mm} mm, {m.pressure_bar} bar, {m.mounting}, {m.certification})"
-                        for m in facts.materials if need.catalogue_group and same_text(m.catalogue_group, need.catalogue_group)]
-                ask(audit_id, f"ERP catalogue-candidate audit for requirement {ref}, catalogue group "
-                              f"{need.catalogue_group}: search the group, collect every results page (repeat collect "
-                              "if capped), then open and file each returned material's technical data and sales status "
-                              "before selecting or pricing any one record. Candidates on file for this group: "
-                              f"{'; '.join(seen) or 'none yet'}. Answer complete only after the result list has ended "
-                              "and every candidate is fully filed; answer absent only when the exhaustive search returned no candidates.")
-            elif audit[0] == "absent":
-                continue
             material = match_material(need, facts.materials)
             if material is None:
                 seen = [f"{m.number} ({'active' if m.active else 'not active' if m.active is False else 'status unknown'}, "
@@ -697,7 +710,8 @@ class CaseFile:
                 ask(f"material:{ref}", f"The ERP material for requirement {ref}: active, in catalogue group "
                                        f"{need.catalogue_group}, bore {need.bore_mm} mm, stroke {need.stroke_mm} mm, "
                                        f"{need.pressure_bar} bar, mounting {need.mounting}, certification "
-                                       f"{need.certification or 'none'}. File each candidate's technical data and status. "
+                                       f"{need.certification or 'none'}. File each candidate's technical data and status, "
+                                       "also a candidate that seems not to match: the case file does the matching. "
                                        f"On file for this group: {'; '.join(seen) or 'nothing yet'}. Answer absent only "
                                        "when every material of the group is on file and none matches.")
                 continue
@@ -749,24 +763,6 @@ class CaseFile:
             return "facts from documents you filed are still being extracted; wait for them, then answer"
         if question == "clarifications" and status == "complete" and not self.clarifications:
             return "no Q&A answers have been extracted yet; reopen the Q&A evidence, file it as clarifications, and wait for the extraction result"
-        if question.startswith("candidates:"):
-            facts = self.inputs()
-            answers = active_clarifications(facts.clarifications, self.scenario)
-            needs, _ = resolve_requirements(facts.requirements, facts.governing, answers, facts.authorities)
-            need = needs.get(question.split(":", 1)[1])
-            group = [m for m in facts.materials if need and need.catalogue_group
-                     and same_text(m.catalogue_group, need.catalogue_group)]
-            unknown = [m.number for m in group
-                       if m.active is None or None in (m.bore_mm, m.stroke_mm, m.pressure_bar, m.mounting)]
-            if status == "complete":
-                if not group:
-                    return "no catalogue candidates are on file yet: continue the ERP search, or answer absent only after an exhaustive search returned none"
-                if unknown:
-                    return ("the technical data or sales status of " + ", ".join(unknown)
-                            + " is not on file yet: open and file every candidate before completing the audit")
-            if status == "absent" and group:
-                return ("catalogue candidates are already on file: open and file every candidate's technical data, "
-                        "then complete the audit (or use the material question if none qualifies)")
         if question.startswith("material:") and status == "absent":
             facts = self.inputs()
             answers = active_clarifications(facts.clarifications, self.scenario)

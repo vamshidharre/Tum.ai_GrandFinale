@@ -1,5 +1,7 @@
 """The generic action verifier must expose silent portal failures to the model."""
+import asyncio
 import sys
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,7 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import llm  # noqa: E402
-from worker import Agent, state_fingerprint  # noqa: E402
+from worker import Agent, action_fingerprint, state_fingerprint  # noqa: E402
 
 
 class FakeTab:
@@ -60,6 +62,12 @@ class ActionVerification(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(outcome["done"])
         self.assertIn("verification: fill caused no visible page change", asked[1])
         self.assertIn("instead of repeating it blindly", asked[1])
+
+    def test_generated_action_ids_do_not_hide_a_repeated_control(self):
+        first = 'url: http://portal.test\n[1] button "Continue"'
+        reread = 'url: http://portal.test\n[48] button "Continue"'
+        self.assertEqual(action_fingerprint([{"do": "click", "id": 1}], first),
+                         action_fingerprint([{"do": "click", "id": 48}], reread))
 
     def test_generated_action_ids_do_not_count_as_a_state_change(self):
         first = 'url: http://portal.test\n[1] button "Continue"'
@@ -252,3 +260,75 @@ class TokenCutOffAndTeamWakeup(unittest.IsolatedAsyncioTestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+class CircleDetection(unittest.IsolatedAsyncioTestCase):
+    """Sandbox run e3804980: the ERP agent rejected the same material every 6 turns for 46 turns, which neither the
+    back-to-back nor the alternating repeat check caught."""
+
+    async def run_cycle(self, **options):
+        cycle = ["search the group", "open the first hit", "read the stroke", "go back", "open it again",
+                 "this material has the wrong stroke"]
+        replies = [{"thought": cycle[i % 6], "actions": [{"do": "fill", "id": 1, "text": str(i)}]} for i in range(20)]
+        replies.append({"thought": "stop", "actions": [{"do": "done", "summary": "stopped"}]})
+        asked = []
+
+        async def model(messages, **kwargs):
+            asked.append(messages[-1]["content"])
+            return replies.pop(0)
+
+        with patch.object(llm, "chat_json", model):
+            outcome = await Agent("test", FakeTab(True), "system", lambda: "job", max_steps=30, **options).run()
+        return outcome, asked
+
+    async def test_thought_repeated_three_times_in_twelve_turns_gets_the_agents_own_hint(self):
+        outcome, asked = await self.run_cycle(circle_hint="file the candidate with keep")
+        hinted = [i for i, text in enumerate(asked) if "file the candidate with keep" in text]
+        self.assertEqual(hinted, [13, 19])  # third pass of the cycle, then again at most every 6 turns
+        self.assertTrue(outcome["done"])  # an investigator is hinted, never forced to finish
+
+    async def test_investigator_repeating_an_unchanged_page_is_sent_idle(self):
+        """Sandbox run 74b22ceb: the tender-portal agent opened the same unchanged page 122 times."""
+        replies = [{"thought": "check the remaining documents", "actions": [{"do": "fill", "id": 1, "text": "Same"}]}
+                   for _ in range(20)]
+        idled = []
+
+        async def model(messages, **kwargs):
+            return replies.pop(0)
+
+        async def idle(state):
+            idled.append(len(replies))
+            return None  # no news: the investigation ends
+
+        with patch.object(llm, "chat_json", model):
+            outcome = await Agent("test", FakeTab(False), "system", lambda: "job", max_steps=30, idle=idle).run()
+        self.assertTrue(outcome["done"])
+        self.assertEqual(idled, [14])  # sent idle after six identical rounds, not after the 30-step cap
+
+
+class TeamWakeup(unittest.IsolatedAsyncioTestCase):
+    """Sandbox run 024bd2ac: the ERP agent went idle while documents were still being read, with its material
+    questions already open. They were never new, so nothing woke it for 400 s."""
+
+    class FakeCase:
+        def __init__(self):
+            self.version, self.pending, self.news = 0, 1, {}
+            self.open = [("material:A-1", "the ERP material for requirement A-1")]
+
+        def questions(self):
+            return self.open
+
+        async def wait_change(self, version, timeout):
+            await asyncio.sleep(0.01)
+            return self.version != version
+
+    async def test_idle_agent_is_woken_when_the_documents_it_waited_for_are_read(self):
+        from agent import Team
+        case = self.FakeCase()
+        team = Team(case, ["erp", "mail"], deadline=time.time() + 5)
+        hold = asyncio.create_task(team.hook("erp")("done"))
+        await asyncio.sleep(0.05)
+        self.assertFalse(hold.done())  # still waiting: nothing has been read yet
+        case.pending, case.version = 0, 1  # the requirements extraction is done; the question was open before
+        news = await asyncio.wait_for(hold, 2)
+        self.assertIn("material:A-1", news or "")

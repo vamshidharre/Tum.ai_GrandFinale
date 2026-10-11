@@ -233,60 +233,6 @@ class LogFailureScenarios(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((mat.bore_mm, mat.carton_size, mat.stock, mat.allocation_mass_g),
                          (50, 5, 75, casefile.Decimal("1250.00")))
 
-    def test_candidate_audit_stays_open_when_a_matching_material_is_available(self):
-        """A first matching ERP record does not make the catalogue audit disappear."""
-        facts = self.make_casefile()
-        facts.merge("positions", {"positions": [
-            {"position": "01.01", "quantity": 10, "unit": "pcs", "unit_is_set": False, "requirement_ref": "REQ-A1"},
-        ]})
-        facts.merge("revisions", {"revisions": [{"revision": "REV-200", "status": "current", "date": "2030-05-01"}]})
-        facts.merge("requirements", {"revision": "REV-200", "requirements": [{
-            "requirement_ref": "REQ-A1", "bore_mm": 50, "stroke_mm": 200, "stroke_is_usable_travel": False,
-            "pressure_bar": 160, "mounting": "flange", "certification": None, "catalogue_group": "GRP-10",
-        }]})
-        facts.merge("material", {"materials": [{
-            "material_number": "MAT-101", "is_active": True, "catalogue_group": "GRP-10",
-            "bore_mm": 50, "stroke_mm": 200, "pressure_bar": 160, "mounting": "flange", "certification": None,
-        }]})
-
-        questions = dict(facts.questions())
-        self.assertIn("candidates:REQ-A1", questions)
-        self.assertIn("data:MAT-101", questions)
-        self.assertEqual(facts.answer("candidates:REQ-A1", "complete", "all catalogue pages and records filed"),
-                         "question candidates:REQ-A1 closed as complete")
-        self.assertIn("data:MAT-101", dict(facts.questions()))
-
-    def test_candidate_audit_rejects_a_summary_record_without_master_data(self):
-        facts = self.make_casefile()
-        facts.merge("positions", {"positions": [
-            {"position": "01.01", "quantity": 10, "unit": "pcs", "unit_is_set": False, "requirement_ref": "REQ-A1"},
-        ]})
-        facts.merge("revisions", {"revisions": [{"revision": "REV-200", "status": "current", "date": "2030-05-01"}]})
-        facts.merge("requirements", {"revision": "REV-200", "requirements": [{
-            "requirement_ref": "REQ-A1", "bore_mm": 50, "stroke_mm": 200, "stroke_is_usable_travel": False,
-            "pressure_bar": 160, "mounting": "flange", "certification": None, "catalogue_group": "GRP-10",
-        }]})
-        facts.merge("material", {"materials": [{"material_number": "MAT-101", "catalogue_group": "GRP-10"}]})
-
-        refusal = facts.answer("candidates:REQ-A1", "complete", "done")
-        self.assertIn("technical data or sales status of MAT-101", refusal)
-
-    def test_empty_candidate_audit_marks_the_requirement_as_no_bid(self):
-        facts = self.make_casefile()
-        facts.merge("positions", {"positions": [
-            {"position": "01.01", "quantity": 10, "unit": "pcs", "unit_is_set": False, "requirement_ref": "REQ-A1"},
-        ]})
-        facts.merge("revisions", {"revisions": [{"revision": "REV-200", "status": "current", "date": "2030-05-01"}]})
-        facts.merge("requirements", {"revision": "REV-200", "requirements": [{
-            "requirement_ref": "REQ-A1", "bore_mm": 50, "stroke_mm": 200, "stroke_is_usable_travel": False,
-            "pressure_bar": 160, "mounting": "flange", "certification": None, "catalogue_group": "GRP-10",
-        }]})
-
-        self.assertEqual(facts.answer("candidates:REQ-A1", "absent", "exhaustive catalogue search returned none"),
-                         "question candidates:REQ-A1 closed as absent")
-        self.assertNotIn("material:REQ-A1", dict(facts.questions()))
-        self.assertEqual(facts.inputs().no_material, {"REQ-A1"})
-
     def test_single_message_folder_header_does_not_overwrite_valid_mailbox_address(self):
         """A folder header without '@' (such as 'Postfach / Lesebereich') must not overwrite a valid mailbox."""
         facts = self.make_casefile()

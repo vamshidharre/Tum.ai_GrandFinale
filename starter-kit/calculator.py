@@ -211,8 +211,11 @@ class Material:
     conditions: list[PriceCondition] = field(default_factory=list)
 
     def matches(self, need: Requirement) -> bool:
+        # A pressure the requirement does not state is no criterion (eval variant A: a specification without pressures
+        # matched no material at all, and every position was left out).
         return (self.bore_mm == need.bore_mm and self.stroke_mm == need.stroke_mm
-                and self.pressure_bar == need.pressure_bar and same_text(self.mounting, need.mounting)
+                and (need.pressure_bar is None or self.pressure_bar == need.pressure_bar)
+                and same_text(self.mounting, need.mounting)
                 and same_certification(self.certification, need.certification))
 
 

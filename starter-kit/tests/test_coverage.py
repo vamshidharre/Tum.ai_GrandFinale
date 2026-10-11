@@ -53,7 +53,7 @@ class Gate(unittest.TestCase):
         for status in ("complete", "absent"):
             refusal = ledger.gate("q-" + status, status)
             self.assertIn("stopped at its limit of 5 page(s)", refusal)
-            self.assertIn("from the current page", refusal)
+            self.assertIn("higher max_pages", refusal)
         ledger.followed({"where": "http://site.test/qa?page=5", "control": "Next", "pages": 4, "capped": False})
         self.assertIsNone(ledger.gate("q-complete", "complete"))
 

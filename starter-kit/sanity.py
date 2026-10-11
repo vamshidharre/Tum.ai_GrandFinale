@@ -44,6 +44,9 @@ REGISTRY: dict[str, Check] = {check.name: check for check in (
           default=False),  # off until a sandbox run shows it helps: it could also drop a value written differently
     Check("summary_check", "before the final signature",
           "a final confirmation on a page that does not show the bid's reference, positions and total", True),
+    Check("escalation", "an agent still going in circles after a hint",
+          "a gate, slider, dead link or covered page the text view hides: one stronger turn (reasoning on, with a "
+          "screenshot) before the agent is given up on", True),
 )}
 
 
