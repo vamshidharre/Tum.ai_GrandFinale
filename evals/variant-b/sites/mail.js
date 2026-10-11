@@ -16,7 +16,7 @@ export const view = (title, body, signedIn) =>
 export function deliverTan(login, tan, reference, count) {
   inboxOf(login).push({
     id: `tan-${count}`,
-    date: new Date().toISOString(),
+    date: new Date(Date.parse("2026-11-10T09:00:00Z") + count * 60000).toISOString(), // on the scenario date (BRIEF.md), not today: a code mail a month "old" was ignored (run_8be6fb14)
     from: "signatur@vergabeportal.example",
     subject: `Ihre Signatur-TAN für ${reference}`,
     body: `Ihre Signatur-TAN für die Angebotsabgabe zu ${reference} lautet: ${tan}\n\nNur die zuletzt angeforderte TAN ist gültig.`,
