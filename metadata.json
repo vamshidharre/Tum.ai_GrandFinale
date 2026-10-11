@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4N2181JX4BQBTFTSWDTFCV1",
   "strategy": "manual-commit",
   "branch": "claude/tier1-speed",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "BEST_RUN_TIMING.md",
     "SPEED_PLAN.md",
@@ -26,13 +26,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 40,
-    "cache_creation_tokens": 134386,
-    "cache_read_tokens": 2500157,
-    "output_tokens": 15152,
-    "api_call_count": 20
+    "input_tokens": 122,
+    "cache_creation_tokens": 221296,
+    "cache_read_tokens": 29689715,
+    "output_tokens": 68941,
+    "api_call_count": 61
   }
 }
