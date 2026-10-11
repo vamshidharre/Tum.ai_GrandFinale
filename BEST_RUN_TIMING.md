@@ -107,4 +107,13 @@ Round 3 worked at the start (agents begin at 0:03, already logged in; mail used 
 
 | Run | Package | Quality | Time | Cost | Notes |
 |---|---|---|---|---|---|
-| (to fill) | round 4 | | | | |
+| run_665adb0e (SCORED, sub_5e116351) | **round 3** (started 09:04 UTC, before round 4 at 09:09) | 100 | **4:50** | $0.223 | first run under 5 min; cost up: supplier portal 40 calls/472k tokens (looped pages 1-4 for a mail record), ERP 49/566k (stock and prices by hand), tender 18/251k (9 "done" wake-ups) — all three targeted by round 4 |
+| (to fill) | round 4 + 5 | | | | |
+
+## 7. Round 5 — cost: no repeated briefing in the history
+
+| Change | Why | Expected |
+|---|---|---|
+| The previous turn kept in full in the history no longer repeats its case file and open questions (the new message has them as they are now); its page and results stay | ~2k of the ~9k input tokens per call (run 665adb0e); uncached input ≈ 90% of the cost | −20% input tokens per call, no change in what the model sees now |
+
+Expected with rounds 4 + 5 on top of 665adb0e: about 4:15-4:45 and **$0.12-0.15** (cost × time ~30-35 $·s instead of 64.8).

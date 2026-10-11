@@ -444,7 +444,12 @@ class Agent:
                     break
             head = page.split("\n", 2)
             short = f"RESULTS OF YOUR LAST ACTIONS\n{done_text[:700]}\n\nPAGE (text dropped)\n" + "\n".join(head[:2])
-            self.turns.append({"user": user, "short": short, "assistant": json.dumps(reply, ensure_ascii=False)})
+            # The previous turn stays in full in the history (its page and results), but without its briefing (case
+            # file and open questions): the new message repeats the briefing as it is now. Run 665adb0e: ~2k of
+            # the ~9k input tokens of every call were this repeated briefing; uncached input is ~90% of the cost.
+            remembered = (f"TIME LEFT: {left} s\n\nRESULTS OF YOUR LAST ACTIONS\n{done_text}\n\nCURRENT PAGE\n{page}"
+                          "\n\n(The case file and open questions of that turn are left out: see the latest message.)")
+            self.turns.append({"user": remembered, "short": short, "assistant": json.dumps(reply, ensure_ascii=False)})
             if os.environ.get("AGENT_TRACE"):  # what the agent saw and answered, one file per turn
                 os.makedirs(os.environ["AGENT_TRACE"], exist_ok=True)
                 with open(os.path.join(os.environ["AGENT_TRACE"], f"{self.name}_{self.steps:03d}.txt"), "w", encoding="utf-8") as handle:
