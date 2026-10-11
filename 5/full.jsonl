@@ -1,0 +1,284 @@
+{
+  "info": {
+    "id": "ses_ed693d5a1ffefjxSg0qgUFbhE3",
+    "slug": "gentle-rocket",
+    "projectID": "95c5dac38f902ab20529b51d191b50a082a313ee",
+    "directory": "D:\\Personal_Projects\\TUM_HackathonFinal\\starter-kit",
+    "path": "starter-kit",
+    "title": "New session - 2026-10-11T05:25:17.022Z",
+    "agent": "build",
+    "model": {
+      "id": "muse-spark-1.3-contributor",
+      "providerID": "meta",
+      "variant": "high"
+    },
+    "version": "1.19.0",
+    "summary": {
+      "additions": 0,
+      "deletions": 0,
+      "files": 0
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    },
+    "time": {
+      "created": 1791696317022,
+      "updated": 1791696420321
+    }
+  },
+  "messages": [
+    {
+      "info": {
+        "role": "user",
+        "time": {
+          "created": 1791696317059
+        },
+        "agent": "build",
+        "model": {
+          "providerID": "meta",
+          "modelID": "muse-spark-1.3-contributor",
+          "variant": "high"
+        },
+        "summary": {
+          "diffs": []
+        },
+        "id": "msg_1296c2a83001UHX5cs4xULEwvD",
+        "sessionID": "ses_ed693d5a1ffefjxSg0qgUFbhE3"
+      },
+      "parts": [
+        {
+          "type": "text",
+          "text": "alright where are you now",
+          "id": "prt_1296c2a85001VzigGjVZR6STry",
+          "sessionID": "ses_ed693d5a1ffefjxSg0qgUFbhE3",
+          "messageID": "msg_1296c2a83001UHX5cs4xULEwvD"
+        }
+      ]
+    },
+    {
+      "info": {
+        "parentID": "msg_1296c2a83001UHX5cs4xULEwvD",
+        "role": "assistant",
+        "mode": "build",
+        "agent": "build",
+        "variant": "high",
+        "path": {
+          "cwd": "D:\\Personal_Projects\\TUM_HackathonFinal\\starter-kit",
+          "root": "D:\\Personal_Projects\\TUM_HackathonFinal"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "modelID": "muse-spark-1.3-contributor",
+        "providerID": "meta",
+        "time": {
+          "created": 1791696317962,
+          "completed": 1791696323531
+        },
+        "error": {
+          "name": "APIError",
+          "data": {
+            "message": "Unauthorized: {\"error\":{\"code\":\"invalid_api_key\",\"message\":\"Unauthorized\",\"param\":null,\"type\":\"authentication_error\"}}",
+            "statusCode": 401,
+            "isRetryable": false,
+            "responseHeaders": {
+              "access-control-allow-origin": "*",
+              "connection": "keep-alive",
+              "content-length": "104",
+              "content-type": "application/json",
+              "date": "Sun, 11 Oct 2026 05:25:19 GMT",
+              "proxy-status": "http_request_error; e_proxy=\"REDACTED\"; e_fb_twtaskhandle=\"REDACTED\"; e_upip=\"REDACTED\"; e_fb_zone=\"REDACTED\"; e_clientaddr=\"REDACTED\"; e_fb_vipaddr=\"REDACTED\", http_request_error; e_proxy=\"REDACTED\"; e_fb_twtaskhandle=\"REDACTED\"; e_upip=\"REDACTED\"; e_fb_zone=\"REDACTED\"; e_clientaddr=\"REDACTED\"; e_fb_vipaddr=\"REDACTED\"",
+              "x-request-id": "5e234a18-3760-4ad1-8188-31f99d523988",
+              "x-route": "model-api-rust"
+            },
+            "responseBody": "{\"error\":{\"code\":\"invalid_api_key\",\"message\":\"Unauthorized\",\"param\":null,\"type\":\"authentication_error\"}}",
+            "metadata": {
+              "url": "https://api.meta.ai/v1/responses"
+            }
+          }
+        },
+        "id": "msg_1296c2e0a0016IsPQZsk0QTNix",
+        "sessionID": "ses_ed693d5a1ffefjxSg0qgUFbhE3"
+      },
+      "parts": []
+    },
+    {
+      "info": {
+        "role": "user",
+        "time": {
+          "created": 1791696358233
+        },
+        "agent": "build",
+        "model": {
+          "providerID": "meta",
+          "modelID": "muse-spark-1.3-contributor",
+          "variant": "high"
+        },
+        "summary": {
+          "diffs": []
+        },
+        "id": "msg_1296ccb590010BnuoD1Lty7AFQ",
+        "sessionID": "ses_ed693d5a1ffefjxSg0qgUFbhE3"
+      },
+      "parts": [
+        {
+          "type": "text",
+          "text": "isais ti connected properlz",
+          "id": "prt_1296ccb5a001NzbM84iEvz6qnS",
+          "sessionID": "ses_ed693d5a1ffefjxSg0qgUFbhE3",
+          "messageID": "msg_1296ccb590010BnuoD1Lty7AFQ"
+        }
+      ]
+    },
+    {
+      "info": {
+        "parentID": "msg_1296ccb590010BnuoD1Lty7AFQ",
+        "role": "assistant",
+        "mode": "build",
+        "agent": "build",
+        "variant": "high",
+        "path": {
+          "cwd": "D:\\Personal_Projects\\TUM_HackathonFinal\\starter-kit",
+          "root": "D:\\Personal_Projects\\TUM_HackathonFinal"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "modelID": "muse-spark-1.3-contributor",
+        "providerID": "meta",
+        "time": {
+          "created": 1791696359231,
+          "completed": 1791696362480
+        },
+        "error": {
+          "name": "APIError",
+          "data": {
+            "message": "Unauthorized: {\"error\":{\"code\":\"invalid_api_key\",\"message\":\"Unauthorized\",\"param\":null,\"type\":\"authentication_error\"}}",
+            "statusCode": 401,
+            "isRetryable": false,
+            "responseHeaders": {
+              "access-control-allow-origin": "*",
+              "connection": "keep-alive",
+              "content-length": "104",
+              "content-type": "application/json",
+              "date": "Sun, 11 Oct 2026 05:26:00 GMT",
+              "proxy-status": "http_request_error; e_proxy=\"REDACTED\"; e_fb_twtaskhandle=\"REDACTED\"; e_upip=\"REDACTED\"; e_fb_zone=\"REDACTED\"; e_clientaddr=\"REDACTED\"; e_fb_vipaddr=\"REDACTED\", http_request_error; e_proxy=\"REDACTED\"; e_fb_twtaskhandle=\"REDACTED\"; e_upip=\"REDACTED\"; e_fb_zone=\"REDACTED\"; e_clientaddr=\"REDACTED\"; e_fb_vipaddr=\"REDACTED\"",
+              "x-request-id": "efa4510e-1162-4443-80ea-6e54856ebc7a",
+              "x-route": "model-api-rust"
+            },
+            "responseBody": "{\"error\":{\"code\":\"invalid_api_key\",\"message\":\"Unauthorized\",\"param\":null,\"type\":\"authentication_error\"}}",
+            "metadata": {
+              "url": "https://api.meta.ai/v1/responses"
+            }
+          }
+        },
+        "id": "msg_1296ccf3f001cOWmKQoVGdU5hW",
+        "sessionID": "ses_ed693d5a1ffefjxSg0qgUFbhE3"
+      },
+      "parts": []
+    },
+    {
+      "info": {
+        "role": "user",
+        "time": {
+          "created": 1791696418817
+        },
+        "agent": "build",
+        "model": {
+          "providerID": "meta",
+          "modelID": "muse-spark-1.3-contributor",
+          "variant": "high"
+        },
+        "summary": {
+          "diffs": []
+        },
+        "id": "msg_1296db8010014CxK5NEvYtAZdm",
+        "sessionID": "ses_ed693d5a1ffefjxSg0qgUFbhE3"
+      },
+      "parts": [
+        {
+          "type": "text",
+          "text": "hi",
+          "id": "prt_1296db8020019EjZhqG7eMy3eB",
+          "sessionID": "ses_ed693d5a1ffefjxSg0qgUFbhE3",
+          "messageID": "msg_1296db8010014CxK5NEvYtAZdm"
+        }
+      ]
+    },
+    {
+      "info": {
+        "parentID": "msg_1296db8010014CxK5NEvYtAZdm",
+        "role": "assistant",
+        "mode": "build",
+        "agent": "build",
+        "variant": "high",
+        "path": {
+          "cwd": "D:\\Personal_Projects\\TUM_HackathonFinal\\starter-kit",
+          "root": "D:\\Personal_Projects\\TUM_HackathonFinal"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "modelID": "muse-spark-1.3-contributor",
+        "providerID": "meta",
+        "time": {
+          "created": 1791696420095,
+          "completed": 1791696424398
+        },
+        "error": {
+          "name": "APIError",
+          "data": {
+            "message": "Unauthorized: {\"error\":{\"code\":\"invalid_api_key\",\"message\":\"Unauthorized\",\"param\":null,\"type\":\"authentication_error\"}}",
+            "statusCode": 401,
+            "isRetryable": false,
+            "responseHeaders": {
+              "access-control-allow-origin": "*",
+              "connection": "keep-alive",
+              "content-length": "104",
+              "content-type": "application/json",
+              "date": "Sun, 11 Oct 2026 05:27:02 GMT",
+              "proxy-status": "http_request_error; e_proxy=\"REDACTED\"; e_fb_twtaskhandle=\"REDACTED\"; e_upip=\"REDACTED\"; e_fb_zone=\"REDACTED\"; e_clientaddr=\"REDACTED\"; e_fb_vipaddr=\"REDACTED\", http_request_error; e_proxy=\"REDACTED\"; e_fb_twtaskhandle=\"REDACTED\"; e_upip=\"REDACTED\"; e_fb_zone=\"REDACTED\"; e_clientaddr=\"REDACTED\"; e_fb_vipaddr=\"REDACTED\"",
+              "x-request-id": "c2ffd868-78e8-452f-a397-90251c7e37bd",
+              "x-route": "model-api-rust"
+            },
+            "responseBody": "{\"error\":{\"code\":\"invalid_api_key\",\"message\":\"Unauthorized\",\"param\":null,\"type\":\"authentication_error\"}}",
+            "metadata": {
+              "url": "https://api.meta.ai/v1/responses"
+            }
+          }
+        },
+        "id": "msg_1296dbcff0011uhjwGPVMxQ1v4",
+        "sessionID": "ses_ed693d5a1ffefjxSg0qgUFbhE3"
+      },
+      "parts": []
+    }
+  ]
+}
