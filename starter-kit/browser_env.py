@@ -262,6 +262,9 @@ CONSENT_JS = r"""
 # full 30 s on a detached frame), and a fresh tab is quicker than waiting (Tab.renew).
 ACTION_TIMEOUT_MS, NAVIGATION_TIMEOUT_MS = 8000, 15000
 SETTLE_SECONDS = 8  # the longest a page may keep loading data before it is read as it is
+# A select value that means "none", and an option (value=label) that offers none, in the languages the forms use.
+NONE_VALUE = re.compile(r"^\s*(?:keine?[nrs]?|kein|none|ohne|null|n/?a|without|-+|—|–)\s*$", re.I)
+NONE_OPTION = re.compile(r"\b(?:keine?[nrs]?|kein|none|ohne|without)\b", re.I)
 LOGIN_WAIT_SECONDS = 8  # after a login is submitted: how long the login form may stay before it counts as not passed
 UNREADABLE = "(this document could not be read"
 PAGE_BREAK = "===== collected page"  # between the pages of a list or document that `collect` followed to its end
@@ -736,6 +739,14 @@ class Tab:
             await locator.select_option(value=loose[0])
             await self.settle()
             return f'selected "{loose[0]}" in [{aid}]'
+        # A value that means "none" takes the list's one option for none, whatever the form calls it (run ddfa36f5:
+        # "Keine" and then "none" for an option labelled "Ohne Zertifizierung" cost the clerk two turns).
+        if NONE_VALUE.match(wanted):
+            nothing = [o.split("=", 1)[0] for o in options if o.split("=", 1)[0].strip() and NONE_OPTION.search(o)]
+            if len(nothing) == 1:
+                await locator.select_option(value=nothing[0])
+                await self.settle()
+                return f'selected "{nothing[0]}" in [{aid}] (the list\'s option for none)'
         return f'[{aid}] has no option "{wanted}"; options: {"; ".join(options)[:600]}'
 
     async def set(self, aid, value) -> str:

@@ -87,10 +87,14 @@ Reading the bid sheet
   moves on), do a whole step in one "steps" action, using the labels exactly as the page shows them. If it stops
   part-way, read the page and carry on from there. You know every value from the bid; you do not need to see each
   list first.
-- POSITIONS: enter the FIRST position the form asks for yourself, with "steps" actions, and read the result: learn
-  which choices exist (e.g. how the form names "no certificate") and which control SAVES a position and moves on to
-  the next one. A control that only adds another, empty line ("add position") does not save the one you filled;
-  pressing it can put the form out of step. Once the first position is saved and the form shows the next one,
+- POSITIONS: enter the FIRST position the form asks for yourself with ONE "steps" action for the WHOLE position:
+  every choice in the form's order, each followed by the control that applies it if the form has one, then the
+  product choice and the amounts, and last the control that SAVES the position and moves on to the next one.
+  "steps" reads the page again after every press, so fields and options that appear only after an apply are found
+  by their labels: do not select one field per turn to look first. For a choice the bid sheet has as null (e.g. no
+  certificate), give the value "none": code picks the form's own option for none. If the chain stops part-way, read
+  the page and carry on from there in one more "steps". A control that only adds another, empty line ("add
+  position") does not save the one you filled; pressing it can put the form out of step. Once the first position is saved and the form shows the next one,
   enter ALL remaining positions with ONE enter_positions action (described below) whose template repeats exactly
   the steps that worked, with placeholders for the values, ending with that saving control. Code repeats it for
   each position the form asks for, in the form's own order. The form may start with any position and use its own

@@ -175,8 +175,9 @@ FILE_EACH_SECONDS = 150  # and seconds for all of them; the agent continues from
 # the records the model names, with the tabs and paths it learned on the first one; it was never used.
 RECORD_BATCH = ("SAVE TURNS: {count} record questions are open on your website. Work ONE candidate record by hand, "
                 "ALL the way: its status and technical views, its stock down to the freely available quantity, and its "
-                "price conditions with their quantity scales; note every control you clicked from the record page to "
-                "reach each page you filed. From then on "
+                "price conditions with their quantity scales; file each of its pages on the way (keep first, then the "
+                "click that leaves the page, in the SAME reply), so this record needs no second filing; note every control "
+                "you clicked from the record page to reach each page you filed. From then on "
                 "file every further candidate of a result list with ONE file_each that repeats ALL of them, not only "
                 "the plain tabs: a tab is {{\"tab\": \"<label>\", \"kind\": \"material\"}}, and a chain of clicks "
                 "(for example down into a stock breakdown to the free stock, or into a price-scale view) is "
@@ -193,6 +194,19 @@ MAIL_BATCH = ("SAVE TURNS: {count} questions are open on your mailbox. Search a 
               "file every record of that list you need with ONE file_each (their links, plus the tab or control that "
               "shows a message's full original text as a path, kind \"mail\"). Code opens and files them and comes "
               "back to the list; do not open them one by one. Search a topic on its own only for what is still open.")
+# Run ddfa36f5 (round 7, 5:10): after walking one record down to its price scales, the ERP agent walked a SECOND
+# record fully by hand "to learn the path structure" (11 turns, ~35 s on the critical path), then filed it again with
+# file_each. Once a price page has been filed by hand, the briefing says the layout is known.
+RECORD_LEARNED = ("YOU KNOW THE RECORD LAYOUT: you have walked a record by hand down to its price scales. Do not walk "
+                  "another record by hand, not even to check it: search the remaining candidates as you did before and "
+                  "file ALL candidates of each result list with ONE file_each, repeating the tabs and click paths you used (labels exactly as "
+                  "you clicked them). The filed pages report each record's status, data, stock and prices to the case "
+                  "file. A page of the record you walked that is not filed yet goes into such a file_each too.")
+# Run ddfa36f5: woken by the record questions, the ERP agent first needed 4 turns (11 s) to find the material search
+# (a menu link that did not navigate). Before any record question exists it has nothing else to do.
+ERP_PREPARE = ("WHILE YOU WAIT: no record question is open yet because the requirements are still being read. Open "
+               "your website's material search page now, so that you can search the moment the questions arrive, then "
+               "finish with done. File nothing and do not search yet.")
 BATCH_NUDGE_AFTER = 3  # same-kind pages filed one by one before file_each is suggested once
 FILED_READ_WAIT = 3  # seconds file_each waits for the pages it filed to be read (10 s cost up to 40 s of ERP time when
 # the model was slow, run ab00e578; the result now also says not to open them again)
@@ -364,8 +378,12 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
         if site_role(name) == "mail" and len(questions) >= 3:
             text += "\n\n" + MAIL_BATCH.format(count=len(questions))
         records = [qid for qid, _ in questions if qid.startswith(("material:", "data:"))]
-        if site_role(name) == "erp" and len(records) >= 2:
+        if site_role(name) == "erp" and records and learned[0]:
+            text += "\n\n" + RECORD_LEARNED
+        elif site_role(name) == "erp" and len(records) >= 2:
             text += "\n\n" + RECORD_BATCH.format(count=len(records))
+        elif site_role(name) == "erp" and not questions and not worked[0]:
+            text += "\n\n" + ERP_PREPARE
         if news:
             text += "\n\nNEWS FROM YOUR FILED DOCUMENTS\n" + "\n".join(f"- {item}" for item in news)
         own_pending = case.pending_for(name)
@@ -378,6 +396,7 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
     agent: Agent
     batched: dict = {}  # kind -> consecutive one-by-one filings, for the file_each nudge (#1)
     worked = [False]  # has filed something: from then on it may go idle by code once its questions are answered
+    learned = [False]  # has filed a price page reached through a record: the record layout is known (RECORD_LEARNED)
 
     def finished_here() -> bool:
         """A routed (ERP or mail) agent that has worked and whose website has no open question left and nothing of
@@ -394,6 +413,10 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
             res += "; do not file this same page again — check OPEN QUESTIONS for what is missing on another page, or finish with done"
         else:
             res += batch_hint(batched, kind, res.startswith("filed"))
+        if kind == "price_conditions" and res.startswith("filed") and not learned[0]:
+            learned[0] = True
+            res += ("; you now know the record layout: file every further candidate with file_each from its result "
+                    "list, repeating your tabs and click paths, and do not walk another record by hand")
         # Fix #2: the bidder Q&A filed as a list that `collect` followed to its own end (over more than one page) is
         # the whole Q&A, so its question closes by itself once it is read (casefile.CaseFile.listed_in_full)
         # instead of keeping the agent browsing until it closes it (run a176359f: 41 s of re-opened documents).
@@ -408,6 +431,9 @@ def investigator(case: CaseFile, team: Team, tab: Tab, deadline: float) -> Agent
         said = await file_each(tab, action, lambda kind, text, source: case.file(kind, text, source, name),
                                agent.coverage.saw, deadline, agent.page_seen)
         worked[0] = worked[0] or "filed" in said
+        if "filed" in said and any(isinstance(tab, dict) and tab.get("kind") == "price_conditions"
+                                   for tab in action.get("tabs") or []):
+            learned[0] = True
         # The pages it filed are read in a few seconds. Round-3 run: the ERP agent took a status still being read
         # for "did not parse" and opened the same pages again (3 extra turns); its next turn now sees the facts.
         until = min(deadline, time.time() + FILED_READ_WAIT)

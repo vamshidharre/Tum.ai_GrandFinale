@@ -186,3 +186,20 @@ Bid phase:
 | TAN + submit | 4 s | 1 | - |
 
 Next candidates (round 8), in order: ERP second by-hand record (~35 s), ERP idle wait (~30 s), clerk first position (~20 s), browser waits in file_each/enter_positions (part of ~75 s).
+
+## 11. Round 8 — from run_ddfa36f5 (100, 5:10, $0.138)
+
+| # | Seen in the log | Change | Files | Expected |
+|---|---|---|---|---|
+| A | ERP walked a SECOND record fully by hand "to learn the path structure" (11 turns), then filed it again with file_each | Once a price page is filed (by hand or by a file_each path), the keep result and every later ERP briefing say the layout is known: search, then ONE file_each per result list; no record by hand (RECORD_LEARNED) | agent.py | -30..35 s, -11 turns |
+| B | The by-hand record had only its price page filed, so it was re-filed with file_each at the end (2 turns, ~10 s) | RECORD_BATCH: file each page of the learning walk on the way (keep first, then the click, in the same reply) | agent.py | -10 s |
+| C | Woken by the record questions, ERP needed 4 turns (11 s) to reach the material search | Before any ERP question exists: open the material search page, then done (ERP_PREPARE); uses the idle 30 s | agent.py | -9 s |
+| D | Clerk: first position took 6 turns (select one field per turn, the same select twice, guessed "Keine" for no certificate) | Clerk prompt: whole first position in ONE steps (steps re-reads after each press); a null choice is given as "none". `select`: a value meaning none ("keine", "ohne", "none", ...) takes the list's single option for none | submit.py, browser_env.py | -15..20 s |
+
+Not changed: quality logic (RFQ reading, calculator, discount/price rules, reconciliation, pre-submit checks); browser waits (already ~0.4 s per step, shorter would risk half-loaded pages).
+
+Expected: ~4:20-4:40, cost about the same or lower ($0.12-0.14).
+
+| Run | Package | Quality | Time | Cost | Notes |
+|---|---|---|---|---|---|
+| (to fill) | round 8 | | | | |
