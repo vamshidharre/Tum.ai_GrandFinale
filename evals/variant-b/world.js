@@ -10,7 +10,7 @@ export const bidder = {
 }
 
 export const tender = {
-  reference: "AZ-2027/0815",
+  reference: "AZ-2027-0815",
   title: "Hydraulikzylinder für die Schleusentore Süd",
   buyer: { name: "Hafenbetriebe Elbstadt", street: "Kaiserkai 7", postalCode: "20457", city: "Elbstadt" },
   procedure: "Offenes Verfahren",
@@ -70,7 +70,7 @@ export const informationDocuments = [
   {
     id: "aenderungsmitteilung-1",
     number: "ÄM-01",
-    title: "Änderungsmitteilung 1 zu AZ-2027/0815",
+    title: "Änderungsmitteilung 1 zu AZ-2027-0815",
     content:
       "Mengenänderung zum Leistungsverzeichnis: Position 1.2 (Verriegelungszylinder) wird auf 1.040 Stück erhöht. " +
       "Alle übrigen Positionen und Mengen bleiben unverändert.",
@@ -78,8 +78,8 @@ export const informationDocuments = [
   {
     id: "aenderungsmitteilung-x",
     number: "ÄM-07",
-    title: "Änderungsmitteilung 7 zu AZ-2027/0816",
-    content: "Für das Verfahren AZ-2027/0816 (Pumpwerk Nord) wird Position 1.2 auf 2.000 Stück erhöht.",
+    title: "Änderungsmitteilung 7 zu AZ-2027-0816",
+    content: "Für das Verfahren AZ-2027-0816 (Pumpwerk Nord) wird Position 1.2 auf 2.000 Stück erhöht.",
   },
   {
     id: "lieferantenleitfaden",
@@ -90,8 +90,8 @@ export const informationDocuments = [
 ]
 
 export const otherTenders = [
-  { reference: "AZ-2027/0816", title: "Pumpwerk Nord: Antriebe", buyer: "Hafenbetriebe Elbstadt", deadline: "2026-12-18" },
-  { reference: "AZ-2026/0790", title: "Fenderanlage Liegeplatz 4", buyer: "Hafenbetriebe Elbstadt", deadline: "2026-11-27" },
+  { reference: "AZ-2027-0816", title: "Pumpwerk Nord: Antriebe", buyer: "Hafenbetriebe Elbstadt", deadline: "2026-12-18" },
+  { reference: "AZ-2026-0790", title: "Fenderanlage Liegeplatz 4", buyer: "Hafenbetriebe Elbstadt", deadline: "2026-11-27" },
 ]
 
 /** The bidder's inbox. No discount approval here: approvals are recorded in the ERP (Freigaben). */
@@ -100,10 +100,10 @@ export const messages = [
     id: "m-2001",
     date: "2026-10-21T08:40:00Z",
     from: "einkauf@hafen-elbstadt.example",
-    subject: "Aufforderung zur Angebotsabgabe AZ-2027/0815",
+    subject: "Aufforderung zur Angebotsabgabe AZ-2027-0815",
     body: `Sehr geehrte Damen und Herren,
 
-wir laden Sie ein, ein Angebot für das Verfahren AZ-2027/0815 (Hydraulikzylinder Schleusentore Süd) abzugeben.
+wir laden Sie ein, ein Angebot für das Verfahren AZ-2027-0815 (Hydraulikzylinder Schleusentore Süd) abzugeben.
 Leistungsverzeichnis und Formblätter finden Sie auf der Beschaffungsplattform, die Leistungsbeschreibung und
 etwaige Änderungsmitteilungen im Lieferantenportal.
 
@@ -114,7 +114,7 @@ Einkauf, Hafenbetriebe Elbstadt`,
     id: "m-2002",
     date: "2026-11-04T16:10:00Z",
     from: "s.weber@nordlicht-fluid.example",
-    subject: "AZ-2027/0815 Rabatt?",
+    subject: "AZ-2027-0815 Rabatt?",
     body: `Hi,
 
 der Kunde hat am Telefon 6 % angedeutet. Ich frage bei der Leitung nach, bitte noch nicht verwenden.
@@ -132,9 +132,9 @@ Sven`,
 
 /** Discount approvals, recorded in the ERP. The latest approval for exactly this reference counts. */
 export const approvals = [
-  { date: "2026-10-28", reference: "AZ-2027/0815", percent: 2.5, by: "Leitung Vertrieb", note: "Erstfreigabe" },
-  { date: "2026-11-06", reference: "AZ-2027/0815", percent: 4, by: "Leitung Vertrieb", note: "ersetzt Freigabe vom 28.10." },
-  { date: "2026-11-07", reference: "AZ-2027/0816", percent: 8, by: "Leitung Vertrieb", note: "" },
+  { date: "2026-10-28", reference: "AZ-2027-0815", percent: 2.5, by: "Leitung Vertrieb", note: "Erstfreigabe" },
+  { date: "2026-11-06", reference: "AZ-2027-0815", percent: 4, by: "Leitung Vertrieb", note: "ersetzt Freigabe vom 28.10." },
+  { date: "2026-11-07", reference: "AZ-2027-0816", percent: 8, by: "Leitung Vertrieb", note: "" },
 ]
 
 /** The ERP's articles: attributes and status (Grunddaten), stock and lead times (Bestand), price scale (Konditionen). */
