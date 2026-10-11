@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N74BT8RN2T2XWJZ0P2DHTE",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 13,
+  "files_touched": [
+    "starter-kit/agent.py",
+    "starter-kit/browser_env.py",
+    "starter-kit/calculator.py",
+    "starter-kit/casefile.py",
+    "starter-kit/coverage.py",
+    "starter-kit/llm.py",
+    "starter-kit/sanity.py",
+    "starter-kit/submit.py",
+    "starter-kit/tests/fixtures/cookie_wall.html",
+    "starter-kit/tests/fixtures/slow_send.html",
+    "starter-kit/tests/test_agent_routing.py",
+    "starter-kit/tests/test_browser_env.py",
+    "starter-kit/tests/test_casefile.py",
+    "starter-kit/tests/test_coverage.py",
+    "starter-kit/tests/test_document_formats.py",
+    "starter-kit/tests/test_enter_positions.py",
+    "starter-kit/tests/test_escalation.py",
+    "starter-kit/tests/test_file_each.py",
+    "starter-kit/tests/test_history.py",
+    "starter-kit/tests/test_invented_tender.py",
+    "starter-kit/tests/test_number_formats.py",
+    "starter-kit/tests/test_other_worlds.py",
+    "starter-kit/tests/test_speed_fixes.py",
+    "starter-kit/tests/test_steps_action.py",
+    "starter-kit/tests/test_submit.py",
+    "starter-kit/tests/test_tab_failover.py",
+    "starter-kit/tests/test_worker.py",
+    "starter-kit/worker.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 238,
+    "cache_creation_tokens": 436740,
+    "cache_read_tokens": 53999048,
+    "output_tokens": 144159,
+    "api_call_count": 120
+  }
+}
