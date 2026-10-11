@@ -1,0 +1,21 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N5N6HZQEB82CFVXXQGWF5W",
+  "strategy": "manual-commit",
+  "branch": "claude/tier1-speed",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "BEST_RUN_TIMING.md",
+    "starter-kit/agent.py",
+    "starter-kit/worker.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
