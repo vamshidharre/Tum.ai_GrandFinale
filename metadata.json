@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4N74BT8RN2T2XWJZ0P2DHTE",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 15,
+  "checkpoints_count": 16,
   "files_touched": [
     "starter-kit/agent.py",
     "starter-kit/browser_env.py",
@@ -54,6 +54,13 @@
       "transcript": "/2/full.jsonl",
       "compact_transcript": "/2/transcript.jsonl",
       "content_hash": "/2/content_hash.txt",
+      "prompt": ""
+    },
+    {
+      "metadata": "/3/metadata.json",
+      "transcript": "/3/full.jsonl",
+      "compact_transcript": "/3/transcript.jsonl",
+      "content_hash": "/3/content_hash.txt",
       "prompt": ""
     }
   ],
