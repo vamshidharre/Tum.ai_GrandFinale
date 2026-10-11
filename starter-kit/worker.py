@@ -195,7 +195,9 @@ class Agent:
                        + "\n".join(f"- {_thought(turn['assistant'])}" for turn in older) + "\n\n")
         for index, turn in enumerate(kept):
             recent = index >= len(kept) - FULL_TURNS
-            content = turn["user"] if recent else turn["short"]
+            # A past turn in full is its results and its page: the briefing that headed it (the case file and the
+            # open questions as they were then) is repeated, up to date, at the head of the current turn.
+            content = turn.get("past", turn["user"]) if recent else turn["short"]
             messages.append({"role": "user", "content": (earlier + content) if index == 0 else content})
             messages.append({"role": "assistant", "content": turn["assistant"]})
         messages.append({"role": "user", "content": (earlier + user) if not kept else user})
@@ -418,7 +420,8 @@ class Agent:
                     break
             head = page.split("\n", 2)
             short = f"RESULTS OF YOUR LAST ACTIONS\n{done_text[:700]}\n\nPAGE (text dropped)\n" + "\n".join(head[:2])
-            self.turns.append({"user": user, "short": short, "assistant": json.dumps(reply, ensure_ascii=False)})
+            self.turns.append({"user": user, "short": short, "assistant": json.dumps(reply, ensure_ascii=False),
+                               "past": f"RESULTS OF YOUR LAST ACTIONS\n{done_text}\n\nTHE PAGE THEN\n{page}"})
             if os.environ.get("AGENT_TRACE"):  # what the agent saw and answered, one file per turn
                 os.makedirs(os.environ["AGENT_TRACE"], exist_ok=True)
                 with open(os.path.join(os.environ["AGENT_TRACE"], f"{self.name}_{self.steps:03d}.txt"), "w", encoding="utf-8") as handle:
