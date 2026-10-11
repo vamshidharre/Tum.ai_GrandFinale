@@ -1,0 +1,7 @@
+I need you to write the linkedin post
+Go to our submission and check our last few runs and do a plot and how we did our best in making our model robutst and in less time : [https://ehl-challenge.atira.ai/team?tab=runs](https://ehl-challenge.atira.ai/team?tab=runs) -- create a image from this showing that I improved in the last moment
+start linkedin post with like this&#x20;
+We tired, we failed. we tried again we failed but every time we failed better.
+Our model prediction improved in the last moments drastically.&#x20;
+learned alot of things and all of my pro models like claude, gemini exhaused both weekly limit and burned 220 dollars of openai credits. It was lot of learning and best weekend in my life. \
+Code in my github
