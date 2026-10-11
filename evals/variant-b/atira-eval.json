@@ -1,0 +1,9 @@
+{
+  "start": "node server.js",
+  "sites": [
+    { "name": "beschaffung", "port": 3000 },
+    { "name": "lieferantenportal", "port": 3001 },
+    { "name": "warenwirtschaft", "port": 3002 },
+    { "name": "postfach", "port": 3003 }
+  ]
+}

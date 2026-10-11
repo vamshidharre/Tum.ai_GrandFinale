@@ -1,0 +1,12 @@
+{
+  "tender_reference": "AZ-2027/0815",
+  "decision": "bid",
+  "currency": "EUR",
+  "discount_percent": 4,
+  "positions": [
+    { "position": "1.1", "material_number": "ZY-100-800-FL-D", "quantity": 6, "unit_price": 1996.8, "lead_time_weeks": 9 },
+    { "position": "1.2", "material_number": "ZY-32-150-GA", "quantity": 1040, "unit_price": 80.74, "lead_time_weeks": 1 },
+    { "position": "2.1", "material_number": "ZY-125-1000-FU-X", "quantity": 3, "unit_price": 4694.4, "lead_time_weeks": 2 }
+  ],
+  "total_net": 110033.6
+}
