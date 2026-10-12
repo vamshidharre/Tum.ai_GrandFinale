@@ -1,0 +1,82 @@
+In the image mentin how time reduced in the last runs. Dont put extra information that I told you
+
+---
+
+We tried. We failed. We tried again but every time, we failed better.
+
+The final hours changed everything.
+
+At the TUM.ai EHL Grand Finale, we built an agentic RFQ-to-Bid system that could navigate unfamiliar enterprise websites, find the right documents, extract evidence, calculate a commercial bid, and submit it end to end.
+
+What made it robust:
+\- LLM-directed browsing instead of hard-coded website flows
+\- Evidence-first extraction, source tracking, and coverage checks
+\- Exact Decimal-based commercial calculations
+\- Four parallel browsers, action verification, recovery paths, and pre-submit review gates
+
+The biggest lesson: correctness and speed are separate challenges. Building reliable agents is not about one perfect prompt, it is about validation, recovery, structured evidence, and relentless iteration.
+
+I exhausted my weekly Claude and Gemini limits, burned roughly $220 in OpenAI credits, and ran on almost no sleep. But I learned more about agentic AI, reliability engineering, and building under pressure than I could have imagined.
+
+It was one of the best weekends of my life.
+
+Code: [https://lnkd.in/dfweW_es](https://lnkd.in/dfweW_es)
+
+\#TUMai #EHLGrandFinale #AgenticAI #LLM #AIEngineering #Hackathon
+
+
+
+in this thanks the tum.ai atira and nice talking with bmw chatgp tacto people&#x20;
+
+
+"🏆 𝗧𝗛𝗘 𝗘𝗛𝗟 𝗚𝗥𝗔𝗡𝗗 𝗙𝗜𝗡𝗔𝗟𝗘 𝗜𝗦 𝗡𝗘𝗫𝗧.\
+\
+Together with [**Atira**](https://www.linkedin.com/company/atira-ai/), [**BMW Group**](https://www.linkedin.com/company/bmw-group/), [**Tacto**](https://www.linkedin.com/company/tactotechnology/) and [**Entire**](https://www.linkedin.com/company/entireio/), we are bringing 𝟯𝟬𝟬+ builders together for an intense weekend of building, competing and shipping in Munich. This 𝗢𝗰𝘁𝗼𝗯𝗲𝗿, 𝟭𝟬 - 𝟭𝟭!\
+\
+This is the official European Hackathon League finale!!\
+\
+𝗢𝗡𝗘 𝗛𝗔𝗖𝗞𝗔𝗧𝗛𝗢𝗡. 𝗧𝗪𝗢 𝗪𝗔𝗬𝗦 𝗧𝗢 𝗪𝗜𝗡.\
+\
+\- Every team in Munich can win the challenge prizes from Atira, BMW or Tacto.\
+\- But only the teams in the EHL top-15 are eligible to compete for the 𝗼𝘃𝗲𝗿𝗮𝗹𝗹 𝗘𝘂𝗿𝗼𝗽𝗲𝗮𝗻 𝗛𝗮𝗰𝗸𝗮𝘁𝗵𝗼𝗻 𝗟𝗲𝗮𝗴𝘂𝗲 title and prize.\
+\- That means you do not need to be in the top 15 to come to Munich, build something great, be a part of the first ever EHL Grand Finale and go home with a challenge prize.\
+\- But if you want the overall EHL title, Munich is where the final fight happens.\
+\
+𝗛𝗢𝗪 𝗧𝗛𝗘 𝗙𝗜𝗡𝗔𝗟 𝗠𝗢𝗗𝗘 𝗪𝗢𝗥𝗞𝗦:\
+\
+👥 300+ participants, Teams: 3-5\
+🏆 Every team is eligible to win one of the three challenges.\
+📈 The top 15 EHL teams are eligible for the overall league win.\
+🔁 If one of those teams does not attend, the next team in the ranking moves up and gets the spot.\
+⚡️ The exact final mechanics stay intentionally tight for now.\
+📅 Date: 10.10 - 11.10\
+\
+𝗧𝗛𝗜𝗦 𝗜𝗦 𝗡𝗢𝗧 𝗝𝗨𝗦𝗧 𝗔𝗕𝗢𝗨𝗧 𝗦𝗛𝗢𝗪𝗜𝗡𝗚 𝗨𝗣.\
+𝗧𝗛𝗘 𝗘𝗛𝗟 𝗚𝗥𝗔𝗡𝗗 𝗙𝗜𝗡𝗔𝗟𝗘\
+𝗪𝗜𝗟𝗟 𝗕𝗘 𝗧𝗛𝗘 𝗢𝗡𝗘 𝗬𝗢𝗨 𝗗𝗢 𝗡𝗢𝗧 𝗪𝗔𝗡𝗧 𝗧𝗢 𝗪𝗔𝗧𝗖𝗛 𝗙𝗥𝗢𝗠 𝗟𝗜𝗡𝗞𝗘𝗗𝗜𝗡.\
+\
+Applications will not stay open forever, and with 300+ builders expected, places will move fast.\
+\
+👉  𝗡𝗲𝘄 𝘁𝗼 𝘁𝗵𝗲 𝗘𝗛𝗟?\
+Create your profile and apply here:\
+[**www.ehl.gg**](https://www.linkedin.com/safety/go/?url=http%3A%2F%2Fwww%2Eehl%2Egg\&urlhash=Bp3D\&REDACTED\&isSdui=true)\
+\
+👉  𝗙𝗶𝗻𝗮𝗹𝗶𝘀𝘁?\
+No need to apply - check your email inbox for your exclusive invitation.\
+\
+𝗠𝘂𝗻𝗶𝗰𝗵. 𝟯𝟬𝟬+ 𝗯𝘂𝗶𝗹𝗱𝗲𝗿𝘀. 𝟯 𝗰𝗵𝗮𝗹𝗹𝗲𝗻𝗴𝗲𝘀. 𝗘𝗛𝗟 𝘁𝗼𝗽-𝟭𝟱 𝗳𝗶𝗻𝗮𝗹𝗶𝘀𝘁𝘀. 𝗢𝗻𝗲 𝗘𝗛𝗟 𝘄𝗶𝗻𝗻𝗲𝗿.\
+\
+\
+\
+[**#EHL**](https://www.linkedin.com/search/results/all/?keywords=%23ehl\&origin=HASH_TAG_FROM_FEED) [**#EuropeanHackathonLeague**](https://www.linkedin.com/search/results/all/?keywords=%23europeanhackathonleague\&origin=HASH_TAG_FROM_FEED) [**#TUMai**](https://www.linkedin.com/search/results/all/?keywords=%23tumai\&origin=HASH_TAG_FROM_FEED) [**#Munich**](https://www.linkedin.com/search/results/all/?keywords=%23munich\&origin=HASH_TAG_FROM_FEED) [**#Hackathon**](https://www.linkedin.com/search/results/all/?keywords=%23hackathon\&origin=HASH_TAG_FROM_FEED) [**#AI**](https://www.linkedin.com/search/results/all/?keywords=%23ai\&origin=HASH_TAG_FROM_FEED) [**#Builders**](https://www.linkedin.com/search/results/all/?keywords=%23builders\&origin=HASH_TAG_FROM_FEED) [**#BMW**](https://www.linkedin.com/search/results/all/?keywords=%23bmw\&origin=HASH_TAG_FROM_FEED) [**#Tacto**](https://www.linkedin.com/search/results/all/?keywords=%23tacto\&origin=HASH_TAG_FROM_FEED) [**#Entire**](https://www.linkedin.com/search/results/all/?keywords=%23entire\&origin=HASH_TAG_FROM_FEED)  "
+
+
+that is their tum.ai post check whom has tagged
+
+---
+
+[https://github.com/vamshidharre/Tum.ai_GrandFinale](https://github.com/vamshidharre/Tum.ai_GrandFinale)
+
+here the readme is empty&#x20;
+
+Can you mention about the event, description of the challenge neatly mention atire....
